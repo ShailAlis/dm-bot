@@ -407,34 +407,40 @@ async function handleDmReply(chatId, game, reply) {
 }
 
 async function startAdventure(chatId, game) {
-  game.phase = 'adventure'
-  game.history = []
-  game.worldContext = generateWorldContext()
-  clearPendingPlayer(game)
-
-  await storage.saveWorldContext(chatId, game.worldContext)
-  await saveAndCacheGame(chatId, game)
-
-  await bot.sendChatAction(chatId, 'typing')
-  await safeSend(bot, chatId, `*La aventura comienza*\n\n${formatPartyStatus(game.players)}`)
-
-  const names = game.players
-    .map((player) => `${player.name} (${player.race} ${player.class}, motivacion: "${player.motivation}")`)
-    .join(', ')
-
-  let reply
   try {
-    reply = await callClaude(
+    game.phase = 'adventure'
+    game.history = []
+    clearPendingPlayer(game)
+
+    try {
+      game.worldContext = generateWorldContext()
+      await storage.saveWorldContext(chatId, game.worldContext)
+    } catch (error) {
+      console.error('No se pudo generar o guardar el contexto del mundo:', error)
+      game.worldContext = null
+    }
+
+    await saveAndCacheGame(chatId, game)
+
+    await bot.sendChatAction(chatId, 'typing')
+    await safeSend(bot, chatId, `*La aventura comienza*\n\n${formatPartyStatus(game.players)}`)
+
+    const names = game.players
+      .map((player) => `${player.name} (${player.race} ${player.class}, motivacion: "${player.motivation}")`)
+      .join(', ')
+
+    const reply = await callClaude(
       game,
       `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa y deja la primera decision en sus manos.`,
     )
-  } catch (error) {
-    await sendClaudeError(chatId, error)
-    return
-  }
 
-  await handleDmReply(chatId, game, reply)
-  await saveAndCacheGame(chatId, game)
+    await handleDmReply(chatId, game, reply)
+    await saveAndCacheGame(chatId, game)
+  } catch (error) {
+    console.error('Error en startAdventure:', error)
+    await safeSend(bot, chatId, 'La aventura ha comenzado, pero hubo un problema al preparar la primera escena. Usa /continuar para seguir.')
+    await saveAndCacheGame(chatId, game)
+  }
 }
 
 async function continueAdventure(chatId, game) {
