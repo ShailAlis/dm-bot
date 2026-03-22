@@ -122,6 +122,47 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW()
     );
   `)
+
+  await pool.query(`
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS telegram_username TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS background TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS trait TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS motivation TEXT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS max_hp INT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS ac INT;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS stats JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS inventory JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS conditions JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS xp INT DEFAULT 0;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS level INT DEFAULT 1;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS abilities JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE players ADD COLUMN IF NOT EXISTS "class" TEXT;
+
+    ALTER TABLE games ADD COLUMN IF NOT EXISTS setup_substep TEXT DEFAULT 'num_players';
+    ALTER TABLE games ADD COLUMN IF NOT EXISTS setup_buffer JSONB DEFAULT '{}'::jsonb;
+    ALTER TABLE games ADD COLUMN IF NOT EXISTS history JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE games ADD COLUMN IF NOT EXISTS current_turn INT DEFAULT 0;
+    ALTER TABLE games ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+  `)
+
+  await pool.query(`
+    UPDATE players
+    SET max_hp = COALESCE(max_hp, hp),
+        xp = COALESCE(xp, 0),
+        level = COALESCE(level, 1),
+        inventory = COALESCE(inventory, '[]'::jsonb),
+        conditions = COALESCE(conditions, '[]'::jsonb),
+        abilities = COALESCE(abilities, '[]'::jsonb),
+        stats = COALESCE(stats, '{}'::jsonb)
+    WHERE max_hp IS NULL
+       OR xp IS NULL
+       OR level IS NULL
+       OR inventory IS NULL
+       OR conditions IS NULL
+       OR abilities IS NULL
+       OR stats IS NULL;
+  `)
 }
 
 function mapPlayerRow(player) {
