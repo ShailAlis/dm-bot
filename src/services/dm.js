@@ -81,8 +81,9 @@ INSTRUCCIONES:
 - Nunca ofrezcas opciones que permitan decidir directamente por NPCs, enemigos, aliados o criaturas del mundo.
 - Los NPCs actuan, responden y toman decisiones solo bajo tu control como Director de Juego.
 - Si un jugador intenta forzar la decision de un NPC, reconduce la escena y describe como reacciona ese NPC por su propia voluntad.
-- Cuando una accion requiera tirada, usa SIEMPRE una linea separada con este formato exacto: TIRADA:[tipo]
-- En [tipo] escribe una descripcion breve y legible, por ejemplo: TIRADA:Percepcion (SAB) o TIRADA:Sigilo (DES)
+- Cuando una accion requiera tirada, usa SIEMPRE una linea separada con este formato exacto: TIRADA:[tipo]|[dificultad]
+- En [tipo] escribe una descripcion breve y legible, por ejemplo: TIRADA:Percepcion (SAB)|15 o TIRADA:Sigilo (DES)|13
+- En [dificultad] escribe solo un numero entero de CD o dificultad a superar
 - No uses corchetes, parentesis extra, ni texto adicional alrededor del comando. No escribas cosas como "Haz una TIRADA:[...]" ni "[TIRADA:...]"
 - Cada tirada debe ocupar su propia linea y no compartir linea con otros comandos
 - Para actualizar HP: UPDATE_HP:[nombre]:[valor]
@@ -159,6 +160,17 @@ function normalizeRollType(rawValue) {
     .trim()
 }
 
+function parseRollCommand(rawValue) {
+  const [rawType, rawDifficulty] = String(rawValue || '').split('|').map((part) => part.trim())
+  const type = normalizeRollType(rawType)
+  const difficulty = Number.parseInt(rawDifficulty, 10)
+
+  return {
+    type,
+    difficulty: Number.isNaN(difficulty) ? null : difficulty,
+  }
+}
+
 async function parseDMCommands(chatId, game, text, storage) {
   let clean = text
   const rolls = []
@@ -166,9 +178,9 @@ async function parseDMCommands(chatId, game, text, storage) {
   const voteData = { active: false, question: '', options: [] }
 
   for (const match of text.matchAll(/TIRADA:\s*([^\n]+)/gi)) {
-    const rollType = normalizeRollType(match[1])
-    if (rollType) {
-      rolls.push({ tipo: rollType, resultado: roll(20) })
+    const rollData = parseRollCommand(match[1])
+    if (rollData.type) {
+      rolls.push({ tipo: rollData.type, dificultad: rollData.difficulty, resultado: roll(20) })
     }
   }
   clean = clean.replace(/TIRADA:\s*[^\n]*/gi, '').trim()

@@ -125,6 +125,11 @@ function formatRoll(roll) {
   let suffix = ''
   if (roll.resultado === 20) suffix = ' - critico'
   if (roll.resultado === 1) suffix = ' - pifia'
+  if (roll.dificultad) {
+    const outcome = roll.resultado >= roll.dificultad ? ' - superada' : ' - fallida'
+    return `Tirada de *${roll.tipo}* contra CD *${roll.dificultad}*: *${roll.resultado}*/20${suffix}${outcome}`
+  }
+
   return `Tirada de *${roll.tipo}*: *${roll.resultado}*/20${suffix}`
 }
 
