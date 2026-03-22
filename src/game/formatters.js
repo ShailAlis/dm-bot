@@ -1,4 +1,4 @@
-const { PROFICIENCY_BONUS, xpForNextLevel } = require('./rules')
+const { PROFICIENCY_BONUS, xpForNextLevel, getModifier } = require('./rules')
 
 function makeProgressBar(current, total, size = 10) {
   if (!total || total <= 0) return `[${'#'.repeat(size)}]`
@@ -6,6 +6,13 @@ function makeProgressBar(current, total, size = 10) {
   const safeCurrent = Math.max(0, Math.min(current, total))
   const filled = Math.round((safeCurrent / total) * size)
   return `[${'#'.repeat(filled)}${'-'.repeat(size - filled)}]`
+}
+
+function formatStatWithModifier(value) {
+  if (typeof value !== 'number') return '-'
+  const modifier = getModifier(value)
+  const sign = modifier >= 0 ? '+' : ''
+  return `${value} (${sign}${modifier})`
 }
 
 function formatPlayerCard(player) {
@@ -18,8 +25,8 @@ function formatPlayerCard(player) {
     `${player.race} ${player.class} - Nivel ${player.level || 1}`,
     `HP: ${player.hp}/${player.maxHp} ${makeProgressBar(player.hp, player.maxHp)}`,
     `CA: ${player.ac} - Competencia: +${proficiency}`,
-    `FUE ${stats.str ?? '-'} - DES ${stats.dex ?? '-'} - CON ${stats.con ?? '-'}`,
-    `INT ${stats.int ?? '-'} - SAB ${stats.wis ?? '-'} - CAR ${stats.cha ?? '-'}`,
+    `FUE ${formatStatWithModifier(stats.str)} - DES ${formatStatWithModifier(stats.dex)} - CON ${formatStatWithModifier(stats.con)}`,
+    `INT ${formatStatWithModifier(stats.int)} - SAB ${formatStatWithModifier(stats.wis)} - CAR ${formatStatWithModifier(stats.cha)}`,
     nextXp ? `XP: ${player.xp}/${nextXp}` : `XP: ${player.xp} (maximo)`,
     `Equipo: ${player.inventory.slice(0, 4).join(', ') || 'Sin equipo destacado'}`,
     `Rasgo: ${player.trait}`,
@@ -123,14 +130,19 @@ function formatLevelUp(levelUp) {
 
 function formatRoll(roll) {
   let suffix = ''
-  if (roll.resultado === 20) suffix = ' - critico'
-  if (roll.resultado === 1) suffix = ' - pifia'
+  if (roll.tiradaBase === 20 || roll.resultado === 20) suffix = ' - critico'
+  if (roll.tiradaBase === 1 || roll.resultado === 1) suffix = ' - pifia'
+  const modifierText = roll.modificador
+    ? ` (${roll.tiradaBase ?? roll.resultado} ${roll.modificador >= 0 ? '+' : '-'} ${Math.abs(roll.modificador)})`
+    : ''
+  const actorPrefix = roll.actor ? `${roll.actor} - ` : ''
+
   if (roll.dificultad) {
     const outcome = roll.resultado >= roll.dificultad ? ' - superada' : ' - fallida'
-    return `Tirada de *${roll.tipo}* contra CD *${roll.dificultad}*: *${roll.resultado}*/20${suffix}${outcome}`
+    return `Tirada de *${actorPrefix}${roll.tipo}* contra CD *${roll.dificultad}*: *${roll.resultado}*/20${modifierText}${suffix}${outcome}`
   }
 
-  return `Tirada de *${roll.tipo}*: *${roll.resultado}*/20${suffix}`
+  return `Tirada de *${actorPrefix}${roll.tipo}*: *${roll.resultado}*/20${modifierText}${suffix}`
 }
 
 function formatVoteProgress(username, choice) {

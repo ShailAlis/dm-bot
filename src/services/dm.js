@@ -1,6 +1,6 @@
 const Anthropic = require('@anthropic-ai/sdk')
 const EEEG = require('../../eeeg')
-const { PROFICIENCY_BONUS, getLevelFromXP, getNewAbilities, hpGainOnLevelUp } = require('../game/rules')
+const { PROFICIENCY_BONUS, getLevelFromXP, getNewAbilities, hpGainOnLevelUp, getModifier } = require('../game/rules')
 const { roll } = require('../game/player')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -81,8 +81,10 @@ INSTRUCCIONES:
 - Nunca ofrezcas opciones que permitan decidir directamente por NPCs, enemigos, aliados o criaturas del mundo.
 - Los NPCs actuan, responden y toman decisiones solo bajo tu control como Director de Juego.
 - Si un jugador intenta forzar la decision de un NPC, reconduce la escena y describe como reacciona ese NPC por su propia voluntad.
-- Cuando una accion requiera tirada, usa SIEMPRE una linea separada con este formato exacto: TIRADA:[tipo]|[dificultad]
-- En [tipo] escribe una descripcion breve y legible, por ejemplo: TIRADA:Percepcion (SAB)|15 o TIRADA:Sigilo (DES)|13
+- Cuando una accion requiera tirada, usa SIEMPRE una linea separada con este formato exacto: TIRADA:[personaje]|[tipo]|[dificultad]
+- En [personaje] escribe el nombre exacto del personaje jugador que hace la tirada
+- En [tipo] escribe una descripcion breve y legible, por ejemplo: Percepcion (SAB) o Sigilo (DES)
+- Ejemplos validos: TIRADA:Aria|Percepcion (SAB)|15 o TIRADA:Borin|Atletismo (FUE)|13
 - En [dificultad] escribe solo un numero entero de CD o dificultad a superar
 - No uses corchetes, parentesis extra, ni texto adicional alrededor del comando. No escribas cosas como "Haz una TIRADA:[...]" ni "[TIRADA:...]"
 - Cada tirada debe ocupar su propia linea y no compartir linea con otros comandos
@@ -161,14 +163,41 @@ function normalizeRollType(rawValue) {
 }
 
 function parseRollCommand(rawValue) {
-  const [rawType, rawDifficulty] = String(rawValue || '').split('|').map((part) => part.trim())
+  const parts = String(rawValue || '').split('|').map((part) => part.trim()).filter(Boolean)
+  let actorName = null
+  let rawType = ''
+  let rawDifficulty = ''
+
+  if (parts.length >= 3) {
+    ;[actorName, rawType, rawDifficulty] = parts
+  } else {
+    ;[rawType, rawDifficulty] = parts
+  }
+
   const type = normalizeRollType(rawType)
   const difficulty = Number.parseInt(rawDifficulty, 10)
 
   return {
+    actorName,
     type,
     difficulty: Number.isNaN(difficulty) ? null : difficulty,
   }
+}
+
+function getStatKeyFromRollType(rollType) {
+  const match = String(rollType || '').toUpperCase().match(/\((FUE|DES|CON|INT|SAB|CAR)\)/)
+  if (!match) return null
+
+  const statMap = {
+    FUE: 'str',
+    DES: 'dex',
+    CON: 'con',
+    INT: 'int',
+    SAB: 'wis',
+    CAR: 'cha',
+  }
+
+  return statMap[match[1]] || null
 }
 
 async function parseDMCommands(chatId, game, text, storage) {
@@ -180,7 +209,20 @@ async function parseDMCommands(chatId, game, text, storage) {
   for (const match of text.matchAll(/TIRADA:\s*([^\n]+)/gi)) {
     const rollData = parseRollCommand(match[1])
     if (rollData.type) {
-      rolls.push({ tipo: rollData.type, dificultad: rollData.difficulty, resultado: roll(20) })
+      const player = rollData.actorName ? findPlayerByName(game, rollData.actorName) : null
+      const statKey = getStatKeyFromRollType(rollData.type)
+      const abilityScore = player && statKey ? player.stats?.[statKey] : null
+      const modifier = abilityScore ? getModifier(abilityScore) : 0
+      const baseRoll = roll(20)
+
+      rolls.push({
+        actor: player?.name || rollData.actorName || null,
+        tipo: rollData.type,
+        dificultad: rollData.difficulty,
+        tiradaBase: baseRoll,
+        modificador: modifier,
+        resultado: baseRoll + modifier,
+      })
     }
   }
   clean = clean.replace(/TIRADA:\s*[^\n]*/gi, '').trim()
