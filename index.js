@@ -242,7 +242,16 @@ function buildReadyCharacterPayload(game) {
 }
 
 function shouldCompleteSetupLocally(game, userText) {
-  return game.setupSubStep === 'confirm' && YES_WORDS.has(normalizeUserText(userText))
+  if (game.setupSubStep !== 'confirm') return false
+
+  const normalized = normalizeUserText(userText)
+  return (
+    YES_WORDS.has(normalized) ||
+    normalized === 'si estoy listo' ||
+    normalized === 'sí estoy listo' ||
+    (normalized.startsWith('si ') && normalized.includes('listo')) ||
+    (normalized.startsWith('sí ') && normalized.includes('listo'))
+  )
 }
 
 function getEligibleVoterIds(players) {
