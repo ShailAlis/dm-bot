@@ -24,6 +24,8 @@ const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true })
 const SETUP_STEPS = ['name', 'race', 'class', 'background', 'trait', 'motivation', 'confirm']
 const PLAYER_COUNT_ACTIONS = ['1 jugador', '2 jugadores', '3 jugadores', '4 jugadores']
 const YES_WORDS = new Set(['si', 'sí', 's', 'ok', 'vale', 'confirmar', 'listo'])
+const RACE_OPTIONS = ['humano', 'elfo', 'enano', 'mediano', 'draconido', 'gnomo', 'semielfo', 'semiorco', 'tiflin']
+const CLASS_OPTIONS = ['guerrero', 'mago', 'picaro', 'clerigo', 'barbaro', 'bardo', 'druida', 'explorador', 'paladin', 'hechicero', 'brujo', 'monje']
 
 const GROUP_TELEGRAM_COMMANDS = [
   { command: 'nueva', description: 'Inicia o reinicia una partida' },
@@ -196,7 +198,7 @@ function buildLocalSetupPrompt(game) {
 
 function buildReadyCharacterPayload(game) {
   const draft = getSetupDraft(game)
-  return `PERSONAJE_LISTO|${draft.name || 'Heroe'}|${draft.race || 'Humano'}|${draft.class || 'Guerrero'}|${draft.background || 'Aventurero'}|${draft.trait || 'Misterioso'}|${draft.motivation || 'Buscar fortuna'}`
+  return `PERSONAJE_LISTO|${draft.name || 'Heroe'}|${resolveRaceValue(draft.race) || 'humano'}|${resolveClassValue(draft.class) || 'guerrero'}|${draft.background || 'Aventurero'}|${draft.trait || 'Misterioso'}|${draft.motivation || 'Buscar fortuna'}`
 }
 
 function shouldCompleteSetupLocally(game, userText) {
@@ -293,6 +295,26 @@ function extractCharacterFromReply(reply, fallbackGame) {
   return parts
 }
 
+function resolveIndexedOption(value, options) {
+  const normalized = normalizeUserText(value)
+  const numeric = Number.parseInt(normalized, 10)
+
+  if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= options.length) {
+    return options[numeric - 1]
+  }
+
+  const matchedOption = options.find((option) => normalizeUserText(option) === normalized)
+  return matchedOption || value
+}
+
+function resolveRaceValue(value) {
+  return resolveIndexedOption(value, RACE_OPTIONS)
+}
+
+function resolveClassValue(value) {
+  return resolveIndexedOption(value, CLASS_OPTIONS)
+}
+
 async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false) {
   try {
     await bot.sendChatAction(chatId, 'typing')
@@ -339,7 +361,9 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     }
 
     if (reply.includes('PERSONAJE_LISTO|')) {
-      const [name, race, playerClass, background, trait, motivation] = extractCharacterFromReply(reply, game)
+      const [name, rawRace, rawClass, background, trait, motivation] = extractCharacterFromReply(reply, game)
+      const race = resolveRaceValue(rawRace)
+      const playerClass = resolveClassValue(rawClass)
       const player = createPlayer(
         name || 'Heroe',
         race || 'Humano',
