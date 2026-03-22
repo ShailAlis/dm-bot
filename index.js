@@ -31,6 +31,7 @@ const GROUP_TELEGRAM_COMMANDS = [
   { command: 'nueva', description: 'Inicia o reinicia una partida' },
   { command: 'unirse', description: 'Une un jugador a la partida actual' },
   { command: 'continuar', description: 'Recupera la ultima aventura guardada' },
+  { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
   { command: 'estado', description: 'Muestra el estado del grupo' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
   { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
@@ -43,6 +44,7 @@ const PRIVATE_TELEGRAM_COMMANDS = [
   { command: 'nueva', description: 'Inicia o reinicia una partida' },
   { command: 'unirse', description: 'Crea el siguiente personaje de la partida' },
   { command: 'continuar', description: 'Recupera tu ultima aventura guardada' },
+  { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
   { command: 'estado', description: 'Muestra el estado de los personajes' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
   { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
@@ -574,6 +576,24 @@ async function continueAdventure(chatId, game, groupChat = false) {
   await saveAndCacheGame(chatId, game)
 }
 
+async function forceContinueNarration(chatId, game, groupChat = false) {
+  await bot.sendChatAction(chatId, 'typing')
+
+  let reply
+  try {
+    reply = await callClaude(
+      game,
+      'La narracion anterior se ha quedado a medias. Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena, y termina con nuevas acciones si corresponde.',
+    )
+  } catch (error) {
+    await sendClaudeError(chatId, error)
+    return
+  }
+
+  await handleDmReply(chatId, game, reply, groupChat)
+  await saveAndCacheGame(chatId, game)
+}
+
 bot.on('callback_query', async (query) => {
   try {
     const chatId = query.message.chat.id
@@ -738,6 +758,19 @@ bot.onText(/\/continuar/, async (msg) => {
   await continueAdventure(chatId, game, !isPrivateChat(msg.chat))
 })
 
+bot.onText(/\/seguir/, async (msg) => {
+  const chatId = msg.chat.id
+  const game = await storage.loadGame(chatId)
+
+  if (!game || game.phase !== 'adventure') {
+    await safeSend(bot, chatId, 'No hay una aventura activa para continuar. Usa /nueva o /continuar.')
+    return
+  }
+
+  storage.setCachedGame(chatId, game)
+  await forceContinueNarration(chatId, game, !isPrivateChat(msg.chat))
+})
+
 bot.onText(/\/memoria/, async (msg) => {
   const game = await storage.getGame(msg.chat.id)
   if (!game || !game.worldMemory?.length) {
@@ -791,6 +824,7 @@ bot.onText(/\/ayuda/, async (msg) => {
         '',
         '/nueva - Empieza una partida y crea tu personaje automaticamente',
         '/continuar - Retoma la ultima partida guardada',
+        '/seguir - Fuerza a la IA a continuar una escena cortada',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
@@ -804,6 +838,7 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/nueva - Crea una partida nueva y arranca el primer personaje',
         '/unirse - Se apunta el siguiente jugador y crea su personaje',
         '/continuar - Retoma la ultima partida guardada',
+        '/seguir - Fuerza a la IA a continuar una escena cortada',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
