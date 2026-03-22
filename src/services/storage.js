@@ -58,7 +58,7 @@ async function initDB() {
       telegram_username TEXT,
       name TEXT,
       race TEXT,
-      class TEXT,
+      "class" TEXT,
       background TEXT,
       trait TEXT,
       motivation TEXT,
@@ -243,7 +243,7 @@ async function saveGame(chatId, game) {
       await client.query(
         `
           INSERT INTO players (
-            chat_id, telegram_user_id, telegram_username, name, race, class, background, trait, motivation,
+            chat_id, telegram_user_id, telegram_username, name, race, "class", background, trait, motivation,
             hp, max_hp, ac, stats, inventory, conditions, xp, level, abilities
           )
           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)

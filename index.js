@@ -351,7 +351,14 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
       clearPendingPlayer(game)
       game.history = []
 
-      await saveAndCacheGame(chatId, game)
+      try {
+        await saveAndCacheGame(chatId, game)
+      } catch (error) {
+        console.error('Error guardando personaje:', error)
+        await safeSend(bot, chatId, `No se pudo guardar el personaje.\n\n\`${error.message}\``)
+        return
+      }
+
       await safeSend(bot, chatId, `*${player.name}* se une a la aventura como ${player.race} ${player.class} de nivel 1.`)
 
       if (game.setupStep >= game.numPlayers) {
