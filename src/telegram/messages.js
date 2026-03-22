@@ -25,9 +25,25 @@ async function sendWithActions(bot, chatId, text, actions = []) {
   await safeSend(bot, chatId, text, { reply_markup: replyMarkup })
 }
 
+function buildInlineKeyboard(options, columns = 2) {
+  const rows = []
+
+  for (let index = 0; index < options.length; index += columns) {
+    const slice = options.slice(index, index + columns)
+    rows.push(
+      slice.map((option, offset) => ({
+        text: option,
+        callback_data: `vote_${index + offset}`,
+      })),
+    )
+  }
+
+  return rows
+}
+
 async function sendVote(bot, chatId, question, options, requiredVoters, storage) {
   const keyboard = {
-    inline_keyboard: [options.map((option, index) => ({ text: option, callback_data: `vote_${index}` }))],
+    inline_keyboard: buildInlineKeyboard(options, 2),
   }
   const footer = requiredVoters.length > 0
     ? `\n\n_Esperando el voto de ${requiredVoters.length} jugador(es)._`
