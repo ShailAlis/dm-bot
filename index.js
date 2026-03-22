@@ -225,9 +225,17 @@ async function sendClaudeError(chatId, error) {
   await safeSend(bot, chatId, `Error con Claude:\n\`${error.message}\``)
 }
 
-async function promptForCurrentPlayer(chatId, game, fallbackText = 'Como se llamara tu heroe?') {
+async function sendSetupPrompt(chatId, text, groupChat = false) {
+  const options = groupChat
+    ? { reply_markup: { force_reply: true, selective: true } }
+    : {}
+
+  await safeSend(bot, chatId, text, options)
+}
+
+async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackText = 'Como se llamara tu heroe?') {
   await bot.sendChatAction(chatId, 'typing')
-  await safeSend(bot, chatId, buildLocalSetupPrompt(game) || fallbackText)
+  await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat)
 }
 
 async function beginNewGame(msg) {
@@ -248,7 +256,7 @@ async function beginNewGame(msg) {
     setPendingPlayer(game, msg.from.id, username)
     await saveAndCacheGame(chatId, game)
     await safeSend(bot, chatId, '*Nueva partida creada*\n\nEmpezamos directamente con tu personaje.')
-    await promptForCurrentPlayer(chatId, game)
+    await promptForCurrentPlayer(chatId, game, false)
     return
   }
 
@@ -337,7 +345,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
         ['/unirse'],
       )
     } else {
-      await safeSend(bot, chatId, `Vamos con el personaje ${game.setupStep + 1} de ${game.numPlayers}.\n\nComo se llama?`)
+      await sendSetupPrompt(chatId, `Vamos con el personaje ${game.setupStep + 1} de ${game.numPlayers}.\n\nComo se llama?`, groupChat)
     }
 
     return
@@ -346,7 +354,11 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
   await saveAndCacheGame(chatId, game)
   const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['Si, estoy listo', 'Quiero cambiar algo'] : []
   const cleanReply = reply.replace('CONFIRMAR_PERSONAJE', '').trim()
-  await sendWithActions(bot, chatId, cleanReply, actions)
+  if (actions.length > 0) {
+    await sendWithActions(bot, chatId, cleanReply, actions)
+  } else {
+    await sendSetupPrompt(chatId, cleanReply, groupChat)
+  }
 }
 
 async function handleDmReply(chatId, game, reply) {
@@ -541,7 +553,7 @@ bot.onText(/\/unirse/, async (msg) => {
   await saveAndCacheGame(chatId, game)
 
   await safeSend(bot, chatId, `*${username}* se une a la partida. Vamos a crear tu personaje.`)
-  await promptForCurrentPlayer(chatId, game)
+  await promptForCurrentPlayer(chatId, game, true)
 })
 
 bot.onText(/\/estado/, async (msg) => {
@@ -693,7 +705,7 @@ bot.on('message', async (msg) => {
             await safeSend(bot, chatId, `Perfecto, seran ${playerCount} jugadores.\n\nEmpezamos con tu personaje. Cuando termines, el resto podra usar /unirse.`)
           }
 
-          await promptForCurrentPlayer(chatId, game)
+          await promptForCurrentPlayer(chatId, game, groupChat)
         } else {
           await sendWithActions(bot, chatId, 'Elige un numero entre 1 y 4 jugadores.', PLAYER_COUNT_ACTIONS)
         }
