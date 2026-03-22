@@ -41,9 +41,15 @@ function buildInlineKeyboard(options, columns = 2) {
   return rows
 }
 
+function getVoteColumns(options) {
+  const longestOption = options.reduce((max, option) => Math.max(max, String(option || '').length), 0)
+  return longestOption > 24 ? 1 : 2
+}
+
 async function sendVote(bot, chatId, question, options, requiredVoters, storage) {
+  const columns = getVoteColumns(options)
   const keyboard = {
-    inline_keyboard: buildInlineKeyboard(options, 2),
+    inline_keyboard: buildInlineKeyboard(options, columns),
   }
   const footer = requiredVoters.length > 0
     ? `\n\n_Esperando el voto de ${requiredVoters.length} jugador(es)._`
