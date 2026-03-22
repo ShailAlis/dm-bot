@@ -38,7 +38,8 @@ const GROUP_TELEGRAM_COMMANDS = [
 ]
 
 const PRIVATE_TELEGRAM_COMMANDS = [
-  { command: 'nueva', description: 'Inicia una aventura en este chat' },
+  { command: 'nueva', description: 'Inicia o reinicia una partida' },
+  { command: 'unirse', description: 'Crea el siguiente personaje de la partida' },
   { command: 'continuar', description: 'Recupera tu ultima aventura guardada' },
   { command: 'estado', description: 'Muestra el estado de los personajes' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
@@ -210,6 +211,11 @@ function getEligibleVoterIds(players) {
   return [...unique]
 }
 
+function pickRandomItem(items) {
+  if (!items || items.length === 0) return null
+  return items[Math.floor(Math.random() * items.length)]
+}
+
 async function saveAndCacheGame(chatId, game) {
   await storage.saveGame(chatId, game)
   storage.setCachedGame(chatId, game)
@@ -248,7 +254,6 @@ async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackT
 
 async function beginNewGame(msg) {
   const chatId = msg.chat.id
-  const username = msg.from.first_name || 'Jugador'
   const game = storage.createEmptyGame()
 
   game.phase = 'setup'
@@ -258,17 +263,18 @@ async function beginNewGame(msg) {
   await storage.resetGame(chatId)
   storage.clearCachedGame(chatId)
 
+  await saveAndCacheGame(chatId, game)
+
   if (isPrivateChat(msg.chat)) {
-    game.numPlayers = 1
-    game.setupSubStep = 'name'
-    setPendingPlayer(game, msg.from.id, username)
-    await saveAndCacheGame(chatId, game)
-    await safeSend(bot, chatId, '*Nueva partida creada*\n\nEmpezamos directamente con tu personaje.')
-    await promptForCurrentPlayer(chatId, game, false)
+    await sendWithActions(
+      bot,
+      chatId,
+      '*Nueva partida creada*\n\nElige cuantos personajes quieres crear en esta partida.',
+      PLAYER_COUNT_ACTIONS,
+    )
     return
   }
 
-  await saveAndCacheGame(chatId, game)
   await sendWithActions(
     bot,
     chatId,
@@ -392,7 +398,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
   }
 }
 
-async function handleDmReply(chatId, game, reply) {
+async function handleDmReply(chatId, game, reply, groupChat = false) {
   const { clean, rolls, actions, levelUps, voteData } = await parseDMCommands(chatId, game, reply, storage)
 
   for (const currentRoll of rolls) {
@@ -406,6 +412,12 @@ async function handleDmReply(chatId, game, reply) {
   const voterIds = getEligibleVoterIds(game.players)
   if (voteData.active && voterIds.length >= 2) {
     await sendVote(bot, chatId, voteData.question, voteData.options, voterIds, storage)
+    return
+  }
+
+  if (groupChat && voterIds.length >= 2 && actions.length >= 2) {
+    await sendVote(bot, chatId, 'Que hace el grupo?', actions, voterIds, storage)
+    await safeSend(bot, chatId, formatDirectorMessage(clean))
     return
   }
 
@@ -441,7 +453,7 @@ async function startAdventure(chatId, game) {
       `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa y deja la primera decision en sus manos.`,
     )
 
-    await handleDmReply(chatId, game, reply)
+    await handleDmReply(chatId, game, reply, false)
     await saveAndCacheGame(chatId, game)
   } catch (error) {
     console.error('Error en startAdventure:', error)
@@ -450,7 +462,7 @@ async function startAdventure(chatId, game) {
   }
 }
 
-async function continueAdventure(chatId, game) {
+async function continueAdventure(chatId, game, groupChat = false) {
   await safeSend(bot, chatId, `*Continuando la aventura*\n\n${formatPartyStatus(game.players)}`)
 
   if (game.worldMemory?.length) {
@@ -466,7 +478,7 @@ async function continueAdventure(chatId, game) {
     return
   }
 
-  await handleDmReply(chatId, game, reply)
+  await handleDmReply(chatId, game, reply, groupChat)
   await saveAndCacheGame(chatId, game)
 }
 
@@ -513,7 +525,10 @@ bot.on('callback_query', async (query) => {
       counts[currentChoice] = (counts[currentChoice] || 0) + 1
     })
 
-    const winner = Object.entries(counts).sort((left, right) => right[1] - left[1])[0][0]
+    const sortedCounts = Object.entries(counts).sort((left, right) => right[1] - left[1])
+    const topVotes = sortedCounts[0][1]
+    const tiedWinners = sortedCounts.filter(([, totalVotes]) => totalVotes === topVotes).map(([option]) => option)
+    const winner = pickRandomItem(tiedWinners)
     const summary = Object.entries(counts)
       .map(([option, totalVotes]) => `${option}: ${totalVotes} voto(s)`)
       .join(', ')
@@ -529,7 +544,7 @@ bot.on('callback_query', async (query) => {
       return
     }
 
-    await handleDmReply(chatId, game, reply)
+    await handleDmReply(chatId, game, reply, !isPrivateChat(query.message.chat))
     await saveAndCacheGame(chatId, game)
   } catch (error) {
     console.error('Error manejando votacion:', error)
@@ -546,11 +561,6 @@ bot.onText(/\/unirse/, async (msg) => {
   const userId = msg.from.id
   const username = msg.from.first_name || 'Jugador'
   const game = await storage.getGame(chatId)
-
-  if (isPrivateChat(msg.chat)) {
-    await safeSend(bot, chatId, 'En chat privado no hace falta /unirse. Usa /nueva para empezar.')
-    return
-  }
 
   if (!game || game.phase !== 'setup') {
     await safeSend(bot, chatId, 'No hay una partida en configuracion. Usa /nueva primero.')
@@ -590,7 +600,7 @@ bot.onText(/\/unirse/, async (msg) => {
   await saveAndCacheGame(chatId, game)
 
   await safeSend(bot, chatId, `*${username}* se une a la partida. Vamos a crear tu personaje.`)
-  await promptForCurrentPlayer(chatId, game, true)
+  await promptForCurrentPlayer(chatId, game, !isPrivateChat(msg.chat))
 })
 
 bot.onText(/\/estado/, async (msg) => {
@@ -633,7 +643,7 @@ bot.onText(/\/continuar/, async (msg) => {
   }
 
   storage.setCachedGame(chatId, game)
-  await continueAdventure(chatId, game)
+  await continueAdventure(chatId, game, !isPrivateChat(msg.chat))
 })
 
 bot.onText(/\/memoria/, async (msg) => {
@@ -731,18 +741,20 @@ bot.on('message', async (msg) => {
 
     if (game.phase === 'setup') {
       if (game.setupSubStep === 'num_players') {
-        const playerCount = Number.parseInt(text, 10)
-        if (playerCount >= 1 && playerCount <= 4) {
-          game.numPlayers = playerCount
-          game.setupSubStep = 'name'
-          setPendingPlayer(game, userId, username)
-          await saveAndCacheGame(chatId, game)
+      const playerCount = Number.parseInt(text, 10)
+      if (playerCount >= 1 && playerCount <= 4) {
+        game.numPlayers = playerCount
+        game.setupSubStep = 'name'
+        setPendingPlayer(game, userId, username)
+        await saveAndCacheGame(chatId, game)
 
-          if (groupChat) {
-            await safeSend(bot, chatId, `Perfecto, seran ${playerCount} jugadores.\n\nEmpezamos con tu personaje. Cuando termines, el resto podra usar /unirse.`)
-          }
+        if (groupChat) {
+          await safeSend(bot, chatId, `Perfecto, seran ${playerCount} jugadores.\n\nEmpezamos con tu personaje. Cuando termines, el resto podra usar /unirse.`)
+        } else {
+          await safeSend(bot, chatId, `Perfecto, crearas ${playerCount} personaje(s) en esta partida.\n\nEmpezamos con el primero.`)
+        }
 
-          await promptForCurrentPlayer(chatId, game, groupChat)
+        await promptForCurrentPlayer(chatId, game, groupChat)
         } else {
           await sendWithActions(bot, chatId, 'Elige un numero entre 1 y 4 jugadores.', PLAYER_COUNT_ACTIONS)
         }
@@ -782,7 +794,7 @@ bot.on('message', async (msg) => {
         return
       }
 
-      await handleDmReply(chatId, game, reply)
+      await handleDmReply(chatId, game, reply, groupChat)
       await saveAndCacheGame(chatId, game)
     }
   } catch (error) {
