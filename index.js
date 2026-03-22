@@ -26,6 +26,14 @@ const PLAYER_COUNT_ACTIONS = ['1 jugador', '2 jugadores', '3 jugadores', '4 juga
 const YES_WORDS = new Set(['si', 'sí', 's', 'ok', 'vale', 'confirmar', 'listo'])
 const RACE_OPTIONS = ['humano', 'elfo', 'enano', 'mediano', 'draconido', 'gnomo', 'semielfo', 'semiorco', 'tiflin']
 const CLASS_OPTIONS = ['guerrero', 'mago', 'picaro', 'clerigo', 'barbaro', 'bardo', 'druida', 'explorador', 'paladin', 'hechicero', 'brujo', 'monje']
+const EDITABLE_SETUP_FIELDS = [
+  { key: 'name', label: 'Nombre' },
+  { key: 'race', label: 'Raza' },
+  { key: 'class', label: 'Clase' },
+  { key: 'background', label: 'Trasfondo' },
+  { key: 'trait', label: 'Rasgo' },
+  { key: 'motivation', label: 'Motivacion' },
+]
 
 const GROUP_TELEGRAM_COMMANDS = [
   { command: 'nueva', description: 'Inicia o reinicia una partida' },
@@ -99,7 +107,24 @@ function clearPendingPlayer(game) {
 function getSetupDraft(game) {
   const draft = { ...game.setupBuffer }
   delete draft.pendingPlayer
+  delete draft.editMode
   return draft
+}
+
+function isEditingSetup(game) {
+  return Boolean(game.setupBuffer?.editMode)
+}
+
+function parseEditableFieldSelection(value) {
+  const normalized = normalizeUserText(value)
+  const numeric = Number.parseInt(normalized, 10)
+
+  if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= EDITABLE_SETUP_FIELDS.length) {
+    return EDITABLE_SETUP_FIELDS[numeric - 1].key
+  }
+
+  const matchedField = EDITABLE_SETUP_FIELDS.find((field) => normalizeUserText(field.label) === normalized)
+  return matchedField?.key || null
 }
 
 function buildSetupSummary(game) {
@@ -135,6 +160,9 @@ function buildSetupFallback(game) {
   }
   if (step === 'motivation') {
     return 'Cual es la principal motivacion de tu personaje?'
+  }
+  if (step === 'edit_select') {
+    return 'Elige que parte del personaje quieres cambiar.'
   }
   if (step === 'confirm') {
     return buildSetupSummary(game)
@@ -197,6 +225,19 @@ function buildLocalSetupPrompt(game) {
     return 'Cual es la motivacion principal de tu personaje?'
   }
 
+  if (step === 'edit_select') {
+    return [
+      '*Que quieres cambiar?*',
+      '',
+      '1. Nombre',
+      '2. Raza',
+      '3. Clase',
+      '4. Trasfondo',
+      '5. Rasgo',
+      '6. Motivacion',
+    ].join('\n')
+  }
+
   if (step === 'confirm') {
     return `${buildSetupSummary(game)}\n\nSi quieres cambiar algo, responde: Quiero cambiar algo`
   }
@@ -238,6 +279,10 @@ function getSetupActions(game) {
 
   if (game.setupSubStep === 'confirm') {
     return ['Si, estoy listo', 'Quiero cambiar algo']
+  }
+
+  if (game.setupSubStep === 'edit_select') {
+    return EDITABLE_SETUP_FIELDS.map((field, index) => `${index + 1}. ${field.label}`)
   }
 
   return []
@@ -396,6 +441,20 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
 
     const pendingPlayer = getPendingPlayer(game)
     const currentStepIndex = SETUP_STEPS.indexOf(game.setupSubStep)
+    if (game.setupSubStep === 'edit_select') {
+      const selectedField = parseEditableFieldSelection(userText)
+
+      if (!selectedField) {
+        await sendSetupPrompt(chatId, 'Elige uno de los campos del personaje para cambiar.', groupChat, replyToMessageId)
+        return
+      }
+
+      game.setupSubStep = selectedField
+      await saveAndCacheGame(chatId, game)
+      await sendSetupPrompt(chatId, buildLocalSetupPrompt(game), groupChat, replyToMessageId)
+      return
+    }
+
     if (currentStepIndex === -1) {
       game.setupSubStep = 'name'
     }
@@ -413,7 +472,10 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText
     if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
 
-    if (currentStepIndex >= 0 && currentStepIndex < SETUP_STEPS.length - 1) {
+    if (isEditingSetup(game)) {
+      game.setupSubStep = 'confirm'
+      game.setupBuffer.editMode = false
+    } else if (currentStepIndex >= 0 && currentStepIndex < SETUP_STEPS.length - 1) {
       game.setupSubStep = SETUP_STEPS[currentStepIndex + 1]
     }
 
@@ -422,8 +484,8 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
       reply = buildReadyCharacterPayload(game)
     } else if (normalizeUserText(userText).includes('quiero cambiar')) {
       game.history = []
-      game.setupSubStep = 'name'
-      game.setupBuffer = {}
+      game.setupSubStep = 'edit_select'
+      game.setupBuffer = { ...game.setupBuffer, editMode: true }
       if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
       reply = buildLocalSetupPrompt(game)
     } else {
@@ -447,6 +509,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
       game.setupStep += 1
       game.setupSubStep = 'name'
       clearPendingPlayer(game)
+      game.setupBuffer.editMode = false
       game.history = []
 
       try {
