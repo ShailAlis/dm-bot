@@ -121,6 +121,23 @@ async function initDB() {
       required_voters JSONB DEFAULT '[]'::jsonb,
       created_at TIMESTAMP DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS donations (
+      id SERIAL PRIMARY KEY,
+      provider TEXT NOT NULL,
+      provider_event_id TEXT NOT NULL,
+      provider_reference TEXT,
+      status TEXT NOT NULL,
+      amount NUMERIC(10, 2),
+      currency TEXT,
+      donor_name TEXT,
+      donor_email TEXT,
+      message TEXT,
+      raw_payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(provider, provider_event_id)
+    );
   `)
 
   await pool.query(`
@@ -443,6 +460,57 @@ async function resetGame(chatId) {
   })
 }
 
+async function upsertDonation(donation) {
+  const result = await pool.query(
+    `
+      INSERT INTO donations (
+        provider, provider_event_id, provider_reference, status, amount, currency,
+        donor_name, donor_email, message, raw_payload, created_at, updated_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      ON CONFLICT (provider, provider_event_id) DO UPDATE SET
+        provider_reference = EXCLUDED.provider_reference,
+        status = EXCLUDED.status,
+        amount = EXCLUDED.amount,
+        currency = EXCLUDED.currency,
+        donor_name = EXCLUDED.donor_name,
+        donor_email = EXCLUDED.donor_email,
+        message = EXCLUDED.message,
+        raw_payload = EXCLUDED.raw_payload,
+        updated_at = NOW()
+      RETURNING *
+    `,
+    [
+      donation.provider,
+      donation.providerEventId,
+      donation.providerReference || null,
+      donation.status,
+      donation.amount ?? null,
+      donation.currency || null,
+      donation.donorName || null,
+      donation.donorEmail || null,
+      donation.message || null,
+      JSON.stringify(donation.rawPayload || {}),
+    ],
+  )
+
+  return result.rows[0]
+}
+
+async function getRecentDonations(limit = 10) {
+  const result = await pool.query(
+    `
+      SELECT provider, status, amount, currency, donor_name, donor_email, message, created_at
+      FROM donations
+      ORDER BY created_at DESC
+      LIMIT $1
+    `,
+    [limit],
+  )
+
+  return result.rows
+}
+
 async function getGame(chatId) {
   if (cache.has(chatId)) return cache.get(chatId)
   const game = await loadGame(chatId)
@@ -480,4 +548,6 @@ module.exports = {
   setCachedGame,
   clearCachedGame,
   createEmptyGame,
+  upsertDonation,
+  getRecentDonations,
 }

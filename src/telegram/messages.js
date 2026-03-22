@@ -25,6 +25,14 @@ async function sendWithActions(bot, chatId, text, actions = []) {
   await safeSend(bot, chatId, text, { reply_markup: replyMarkup })
 }
 
+async function sendLinkButtons(bot, chatId, text, links = []) {
+  const keyboard = {
+    inline_keyboard: links.map((link) => [{ text: link.label, url: link.url }]),
+  }
+
+  await safeSend(bot, chatId, text, { reply_markup: keyboard })
+}
+
 function buildInlineKeyboard(options, columns = 2) {
   const rows = []
 
@@ -66,6 +74,7 @@ async function sendLevelUpMessage(bot, chatId, levelUp) {
 module.exports = {
   safeSend,
   sendWithActions,
+  sendLinkButtons,
   sendVote,
   sendLevelUpMessage,
 }

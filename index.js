@@ -14,8 +14,10 @@ const {
   formatVoteResult,
 } = require('./src/game/formatters')
 const { buildSetupPrompt, callClaude, generateWorldContext, parseDMCommands } = require('./src/services/dm')
+const { buildDonationMessage, getDonationProviders } = require('./src/services/donations')
 const storage = require('./src/services/storage')
-const { safeSend, sendWithActions, sendVote, sendLevelUpMessage } = require('./src/telegram/messages')
+const { startWebhookServer } = require('./src/services/webhooks')
+const { safeSend, sendWithActions, sendVote, sendLevelUpMessage, sendLinkButtons } = require('./src/telegram/messages')
 
 const REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'DATABASE_URL', 'ANTHROPIC_API_KEY']
 
@@ -40,6 +42,7 @@ const GROUP_TELEGRAM_COMMANDS = [
   { command: 'unirse', description: 'Une un jugador a la partida actual' },
   { command: 'continuar', description: 'Recupera la ultima aventura guardada' },
   { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
+  { command: 'donar', description: 'Muestra formas de apoyar el proyecto' },
   { command: 'estado', description: 'Muestra el estado del grupo' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
   { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
@@ -53,6 +56,7 @@ const PRIVATE_TELEGRAM_COMMANDS = [
   { command: 'unirse', description: 'Crea el siguiente personaje de la partida' },
   { command: 'continuar', description: 'Recupera tu ultima aventura guardada' },
   { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
+  { command: 'donar', description: 'Muestra formas de apoyar el proyecto' },
   { command: 'estado', description: 'Muestra el estado de los personajes' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
   { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
@@ -821,6 +825,18 @@ bot.onText(/\/continuar/, async (msg) => {
   await continueAdventure(chatId, game, !isPrivateChat(msg.chat))
 })
 
+bot.onText(/\/donar/, async (msg) => {
+  const chatId = msg.chat.id
+  const providers = getDonationProviders()
+
+  if (providers.length === 0) {
+    await safeSend(bot, chatId, 'Todavia no he configurado enlaces de donacion. Cuando los tengas, este comando mostrara Stripe y PayPal.')
+    return
+  }
+
+  await sendLinkButtons(bot, chatId, buildDonationMessage(), providers)
+})
+
 bot.onText(/\/seguir/, async (msg) => {
   const chatId = msg.chat.id
   const game = await storage.loadGame(chatId)
@@ -888,6 +904,7 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/nueva - Empieza una partida y crea tu personaje automaticamente',
         '/continuar - Retoma la ultima partida guardada',
         '/seguir - Fuerza a la IA a continuar una escena cortada',
+        '/donar - Muestra formas de apoyar el proyecto',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
@@ -902,6 +919,7 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/unirse - Se apunta el siguiente jugador y crea su personaje',
         '/continuar - Retoma la ultima partida guardada',
         '/seguir - Fuerza a la IA a continuar una escena cortada',
+        '/donar - Muestra formas de apoyar el proyecto',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
@@ -997,6 +1015,7 @@ async function bootstrap() {
   validateEnv()
   await storage.initDB()
   await registerTelegramCommands()
+  startWebhookServer()
   console.log('Bot DM Automatico iniciado')
 }
 
