@@ -72,6 +72,7 @@ function normalizeUserText(text) {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,!?:;]/g, '')
 }
 
 function getPendingPlayer(game) {
@@ -196,6 +197,45 @@ function buildLocalSetupPrompt(game) {
   return buildSetupFallback(game)
 }
 
+function getSetupActions(game) {
+  if (game.setupSubStep === 'race') {
+    return [
+      '1. Humano',
+      '2. Elfo',
+      '3. Enano',
+      '4. Mediano',
+      '5. Draconido',
+      '6. Gnomo',
+      '7. Semielfo',
+      '8. Semiorco',
+      '9. Tiflin',
+    ]
+  }
+
+  if (game.setupSubStep === 'class') {
+    return [
+      '1. Guerrero',
+      '2. Mago',
+      '3. Picaro',
+      '4. Clerigo',
+      '5. Barbaro',
+      '6. Bardo',
+      '7. Druida',
+      '8. Explorador',
+      '9. Paladin',
+      '10. Hechicero',
+      '11. Brujo',
+      '12. Monje',
+    ]
+  }
+
+  if (game.setupSubStep === 'confirm') {
+    return ['Si, estoy listo', 'Quiero cambiar algo']
+  }
+
+  return []
+}
+
 function buildReadyCharacterPayload(game) {
   const draft = getSetupDraft(game)
   return `PERSONAJE_LISTO|${draft.name || 'Heroe'}|${resolveRaceValue(draft.race) || 'humano'}|${resolveClassValue(draft.class) || 'guerrero'}|${draft.background || 'Aventurero'}|${draft.trait || 'Misterioso'}|${draft.motivation || 'Buscar fortuna'}`
@@ -234,6 +274,14 @@ async function sendClaudeError(chatId, error) {
 }
 
 async function sendSetupPrompt(chatId, text, groupChat = false) {
+  const game = await storage.getGame(chatId)
+  const actions = getSetupActions(game)
+
+  if (actions.length > 0) {
+    await sendWithActions(bot, chatId, text, actions)
+    return
+  }
+
   const options = groupChat
     ? { reply_markup: { force_reply: true, selective: true } }
     : {}
@@ -243,21 +291,7 @@ async function sendSetupPrompt(chatId, text, groupChat = false) {
 
 async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackText = 'Como se llamara tu heroe?') {
   await bot.sendChatAction(chatId, 'typing')
-
-  if (game.setupSubStep === 'race' || game.setupSubStep === 'class') {
-    await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat)
-    return
-  }
-
-  let reply
-
-  try {
-    reply = await callClaude(game, 'Continua con la creacion del personaje.', buildSetupPrompt(game))
-  } catch (error) {
-    reply = buildLocalSetupPrompt(game) || fallbackText
-  }
-
-  await sendSetupPrompt(chatId, reply, groupChat)
+  await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat)
 }
 
 async function beginNewGame(msg) {
@@ -328,12 +362,16 @@ function resolveIndexedOption(value, options) {
   return matchedOption || value
 }
 
+function stripLeadingIndex(value) {
+  return String(value || '').replace(/^\s*\d+\.\s*/, '').trim()
+}
+
 function resolveRaceValue(value) {
-  return resolveIndexedOption(value, RACE_OPTIONS)
+  return resolveIndexedOption(stripLeadingIndex(value), RACE_OPTIONS)
 }
 
 function resolveClassValue(value) {
-  return resolveIndexedOption(value, CLASS_OPTIONS)
+  return resolveIndexedOption(stripLeadingIndex(value), CLASS_OPTIONS)
 }
 
 async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false) {
@@ -366,21 +404,9 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
       game.setupSubStep = 'name'
       game.setupBuffer = {}
       if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
-      try {
-        reply = await callClaude(game, 'El jugador quiere rehacer el personaje desde el principio.', buildSetupPrompt(game))
-      } catch (error) {
-        console.error('Claude fallo al reiniciar setup:', error)
-        reply = buildLocalSetupPrompt(game)
-      }
-    } else if (game.setupSubStep === 'race' || game.setupSubStep === 'class' || game.setupSubStep === 'confirm') {
       reply = buildLocalSetupPrompt(game)
     } else {
-      try {
-        reply = await callClaude(game, userText, buildSetupPrompt(game))
-      } catch (error) {
-        console.error('Claude fallo en setup, usando fallback local:', error)
-        reply = buildLocalSetupPrompt(game)
-      }
+      reply = buildLocalSetupPrompt(game)
     }
 
     if (reply.includes('PERSONAJE_LISTO|')) {
