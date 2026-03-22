@@ -70,6 +70,13 @@ async function initDB() {
       description TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS chronicle (
+      id SERIAL PRIMARY KEY,
+      chat_id BIGINT REFERENCES games(chat_id) ON DELETE CASCADE,
+      entry TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
   `);
   console.log('✅ Base de datos inicializada');
 }
@@ -253,6 +260,8 @@ INSTRUCCIONES:
     MEMORIA_DECISION:[título]|[descripción corta]
     MEMORIA_LUGAR:[nombre lugar]|[descripción corta]
     MEMORIA_NPC:[nombre NPC]|[descripción corta y actitud]
+- Tras cada respuesta narrativa añade una entrada a la crónica con:
+    CRONICA:[párrafo narrativo en tercera persona, estilo literario épico, 2-3 frases]
 - Usa formato Markdown de Telegram (*negrita*, _cursiva_).
 - Máximo 3 párrafos por respuesta narrativa.
 - Al final sugiere 3 acciones: ACCIONES: acción1 | acción2 | acción3`;
@@ -343,6 +352,15 @@ async function parseDMCommands(chatId, game, text) {
     }
   }
   clean = clean.replace(/MEMORIA_(DECISION|LUGAR|NPC):[^\n]*/gi, '').trim();
+
+  // Parsear y guardar crónica
+  const cronicaRe = /CRONICA:([^\n]+)/gi;
+  let cm;
+  while ((cm = cronicaRe.exec(text)) !== null) {
+    const entry = cm[1].trim();
+    await pool.query('INSERT INTO chronicle (chat_id, entry) VALUES ($1, $2)', [chatId, entry]);
+  }
+  clean = clean.replace(/CRONICA:[^\n]*/gi, '').trim();
 
   let actions = [];
   const acMatch = clean.match(/ACCIONES:\s*([^\n]+)/i);
@@ -497,6 +515,27 @@ bot.onText(/\/memoria/, async (msg) => {
   if (locations.length) msg2 += `\n\n🗺️ *Lugares visitados:*\n${locations.map(m=>`• ${m.title}: _${m.description}_`).join('\n')}`;
   if (npcs.length) msg2 += `\n\n👤 *NPCs conocidos:*\n${npcs.map(m=>`• ${m.title}: _${m.description}_`).join('\n')}`;
   await bot.sendMessage(chatId, msg2, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/cronica/, async (msg) => {
+  const chatId = msg.chat.id;
+  const game = await getGame(chatId);
+  if (!game || game.players.length === 0) {
+    await bot.sendMessage(chatId, 'No hay ninguna aventura en curso. Usa /nueva para comenzar.');
+    return;
+  }
+  const res = await pool.query('SELECT entry, created_at FROM chronicle WHERE chat_id = $1 ORDER BY created_at ASC', [chatId]);
+  if (res.rows.length === 0) {
+    await bot.sendMessage(chatId, 'La crónica está vacía todavía. ¡Juega un poco más!');
+    return;
+  }
+  const heroes = game.players.map(p => `${p.name} el/la ${p.race} ${p.class}`).join(', ');
+  const header = `CRÓNICA DE LA AVENTURA\n${'═'.repeat(40)}\nHéroes: ${heroes}\n${'═'.repeat(40)}\n\n`;
+  const body = res.rows.map((r, i) => `${i + 1}. ${r.entry}`).join('\n\n');
+  const footer = `\n\n${'═'.repeat(40)}\nFin de la crónica — ${new Date().toLocaleDateString('es-ES')}`;
+  const content = header + body + footer;
+  const buf = Buffer.from(content, 'utf-8');
+  await bot.sendDocument(chatId, buf, {}, { filename: 'cronica_aventura.txt', contentType: 'text/plain' });
 });
 
 bot.onText(/\/ayuda/, async (msg) => {
