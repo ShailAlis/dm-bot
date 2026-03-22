@@ -13,7 +13,7 @@ const {
   formatVoteProgress,
   formatVoteResult,
 } = require('./src/game/formatters')
-const { buildSetupPrompt, callClaude, generateWorldContext, parseDMCommands } = require('./src/services/dm')
+const { callClaude, generateWorldContext, parseDMCommands } = require('./src/services/dm')
 const storage = require('./src/services/storage')
 const { safeSend, sendWithActions, sendVote, sendLevelUpMessage } = require('./src/telegram/messages')
 
@@ -132,6 +132,67 @@ function buildSetupFallback(game) {
   return 'Sigue con la creacion del personaje.'
 }
 
+function buildLocalSetupPrompt(game) {
+  const step = game.setupSubStep
+
+  if (step === 'name') {
+    return 'Como se llamara tu personaje?'
+  }
+
+  if (step === 'race') {
+    return [
+      '*Elige una raza*',
+      '',
+      '1. Humano',
+      '2. Elfo',
+      '3. Enano',
+      '4. Mediano',
+      '5. Draconido',
+      '6. Gnomo',
+      '7. Semielfo',
+      '8. Semiorco',
+      '9. Tiflin',
+    ].join('\n')
+  }
+
+  if (step === 'class') {
+    return [
+      '*Elige una clase*',
+      '',
+      '1. Guerrero',
+      '2. Mago',
+      '3. Picaro',
+      '4. Clerigo',
+      '5. Barbaro',
+      '6. Bardo',
+      '7. Druida',
+      '8. Explorador',
+      '9. Paladin',
+      '10. Hechicero',
+      '11. Brujo',
+      '12. Monje',
+    ].join('\n')
+  }
+
+  if (step === 'background') {
+    return 'Cual es el trasfondo de tu personaje?'
+  }
+
+  if (step === 'trait') {
+    return 'Describe un rasgo de personalidad importante.'
+  }
+
+  if (step === 'motivation') {
+    return 'Cual es la motivacion principal de tu personaje?'
+  }
+
+  if (step === 'confirm') {
+    return `${buildSetupSummary(game)}\n\nSi quieres cambiar algo, responde: Quiero cambiar algo`
+  }
+
+  return buildSetupFallback(game)
+}
+
 function buildReadyCharacterPayload(game) {
   const draft = getSetupDraft(game)
   return `PERSONAJE_LISTO|${draft.name || 'Heroe'}|${draft.race || 'Humano'}|${draft.class || 'Guerrero'}|${draft.background || 'Aventurero'}|${draft.trait || 'Misterioso'}|${draft.motivation || 'Buscar fortuna'}`
@@ -166,15 +227,7 @@ async function sendClaudeError(chatId, error) {
 
 async function promptForCurrentPlayer(chatId, game, fallbackText = 'Como se llamara tu heroe?') {
   await bot.sendChatAction(chatId, 'typing')
-  let reply
-
-  try {
-    reply = await callClaude(game, 'Pide el nombre del personaje de forma epica.', buildSetupPrompt(game))
-  } catch (error) {
-    reply = fallbackText
-  }
-
-  await safeSend(bot, chatId, reply)
+  await safeSend(bot, chatId, buildLocalSetupPrompt(game) || fallbackText)
 }
 
 async function beginNewGame(msg) {
@@ -242,12 +295,14 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
   let reply
   if (shouldCompleteSetupLocally(game, userText)) {
     reply = buildReadyCharacterPayload(game)
+  } else if (normalizeUserText(userText).includes('quiero cambiar')) {
+    game.history = []
+    game.setupSubStep = 'name'
+    game.setupBuffer = {}
+    if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
+    reply = buildLocalSetupPrompt(game)
   } else {
-    try {
-      reply = await callClaude(game, userText, buildSetupPrompt(game))
-    } catch (error) {
-      reply = buildSetupFallback(game)
-    }
+    reply = buildLocalSetupPrompt(game)
   }
 
   if (reply.includes('PERSONAJE_LISTO|')) {
