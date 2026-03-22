@@ -24,6 +24,7 @@
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const Anthropic = require('@anthropic-ai/sdk');
+const EEEG = require('./eeeg');
 const { Pool } = require('pg');
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
@@ -75,6 +76,29 @@ async function initDB() {
       id SERIAL PRIMARY KEY,
       chat_id BIGINT REFERENCES games(chat_id) ON DELETE CASCADE,
       entry TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS world_context (
+      chat_id BIGINT PRIMARY KEY REFERENCES games(chat_id) ON DELETE CASCADE,
+      town_name TEXT,
+      town_type TEXT,
+      town_population INT,
+      town_event TEXT,
+      town_landmark TEXT,
+      tavern_name TEXT,
+      tavern_wealth TEXT,
+      tavern_feature TEXT,
+      tavern_rumor TEXT,
+      tavern_brew_name TEXT,
+      tavern_brew_desc TEXT,
+      npc_summary TEXT,
+      npc_pocket TEXT,
+      npc_secret TEXT,
+      plot_hook TEXT,
+      encounter TEXT,
+      curiosity TEXT,
+      extra_rumor TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
@@ -138,6 +162,48 @@ async function saveMemory(chatId, type, title, description) {
     'INSERT INTO world_memory (chat_id, type, title, description) VALUES ($1,$2,$3,$4)',
     [chatId, type, title, description]
   );
+}
+
+// ── DB: Guardar contexto del mundo ───────────────────────────
+async function saveWorldContext (chatId, ctx) {
+  await pool.query(`
+    INSERT INTO world_context (
+      chat_id, town_name, town_type, town_population, town_event, town_landmark,
+      tavern_name, tavern_wealth, tavern_feature, tavern_rumor,
+      tavern_brew_name, tavern_brew_desc,
+      npc_summary, npc_pocket, npc_secret,
+      plot_hook, encounter, curiosity, extra_rumor
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+    ON CONFLICT (chat_id) DO UPDATE SET
+      town_name=$2, town_type=$3, town_population=$4, town_event=$5, town_landmark=$6,
+      tavern_name=$7, tavern_wealth=$8, tavern_feature=$9, tavern_rumor=$10,
+      tavern_brew_name=$11, tavern_brew_desc=$12,
+      npc_summary=$13, npc_pocket=$14, npc_secret=$15,
+      plot_hook=$16, encounter=$17, curiosity=$18, extra_rumor=$19
+  `, [
+    chatId,
+    ctx.town.name, ctx.town.type, ctx.town.population, ctx.town.event, ctx.town.landmark,
+    ctx.tavern.name, ctx.tavern.wealth, ctx.tavern.feature, ctx.tavern.rumor,
+    ctx.tavern.specialBrew.name, ctx.tavern.specialBrew.desc,
+    ctx.npc.summary, ctx.npc.pocket, ctx.npc.secret,
+    ctx.hook.summary, ctx.encounter.description, ctx.curiosity, ctx.rumor
+  ])
+}
+
+// ── DB: Cargar contexto del mundo ─────────────────────────────
+async function loadWorldContext (chatId) {
+  const res = await pool.query('SELECT * FROM world_context WHERE chat_id = $1', [chatId])
+  if (res.rows.length === 0) return null
+  const r = res.rows[0]
+  return {
+    town: { name: r.town_name, type: r.town_type, population: r.town_population, event: r.town_event, landmark: r.town_landmark },
+    tavern: { name: r.tavern_name, wealth: r.tavern_wealth, feature: r.tavern_feature, rumor: r.tavern_rumor, specialBrew: { name: r.tavern_brew_name, desc: r.tavern_brew_desc } },
+    npc: { summary: r.npc_summary, pocket: r.npc_pocket, secret: r.npc_secret },
+    hook: { summary: r.plot_hook },
+    encounter: { description: r.encounter },
+    curiosity: r.curiosity,
+    rumor: r.extra_rumor
+  }
 }
 
 // ── DB: Borrar partida ────────────────────────────────────────
@@ -263,6 +329,9 @@ INSTRUCCIONES:
 - Tras cada respuesta narrativa añade una entrada a la crónica con:
     CRONICA:[párrafo narrativo en tercera persona, estilo literario épico, 2-3 frases]
 - Usa formato Markdown de Telegram (*negrita*, _cursiva_).
+
+CONTEXTO DEL MUNDO (generado proceduralmente, úsalo para enriquecer la narrativa):
+${buildWorldContext()}
 - Máximo 3 párrafos por respuesta narrativa.
 - Al final sugiere 3 acciones: ACCIONES: acción1 | acción2 | acción3`;
 }
@@ -285,6 +354,38 @@ Según el paso:
 
 Cuando confirme escribe: PERSONAJE_LISTO|[nombre]|[raza]|[clase]|[trasfondo]|[rasgo]|[motivación]
 Markdown de Telegram. Breve y en español.`;
+}
+
+// ── Contexto del mundo generado con EEEG ─────────────────────
+function generateWorldContext () {
+  const loc = EEEG.generateLocation()
+  return {
+    town: loc.town,
+    tavern: loc.tavern,
+    npc: EEEG.generateNPC(),
+    hook: EEEG.generatePlotHook(),
+    encounter: EEEG.generateEncounter(),
+    curiosity: EEEG.generateCuriosity(),
+    rumor: EEEG.generateRumor()
+  }
+}
+
+function buildWorldContextString (ctx) {
+  if (!ctx) return ''
+  return `
+CONTEXTO DEL MUNDO (generado proceduralmente, úsalo para enriquecer la narrativa):
+Localización: ${ctx.town.name} (${ctx.town.type}, ~${ctx.town.population} hab.)
+Evento actual: ${ctx.town.event}
+Landmark: ${ctx.town.landmark}
+Taberna: "${ctx.tavern.name}" (${ctx.tavern.wealth}) — ${ctx.tavern.feature}
+Bebida especial: "${ctx.tavern.specialBrew.name}": ${ctx.tavern.specialBrew.desc}
+Rumor en la taberna: ${ctx.tavern.rumor}
+NPC notable: ${ctx.npc.summary} Lleva: ${ctx.npc.pocket}. Secreto: ${ctx.npc.secret}
+Gancho de aventura: ${ctx.hook.summary}
+Posible encuentro: ${ctx.encounter.description}
+Objeto curioso disponible: ${ctx.curiosity}
+Rumor adicional: ${ctx.rumor}
+  `.trim()
 }
 
 // ── Llamada a Claude ──────────────────────────────────────────
