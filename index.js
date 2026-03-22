@@ -285,7 +285,11 @@ async function handleSetup(chatId, game, userText) {
   await bot.sendChatAction(chatId, 'typing');
   let reply;
   try { reply = await callGPT(game, userText, buildSetupPrompt(game)); }
-  catch(e) { await bot.sendMessage(chatId, '❌ Error de conexión con OpenAI.'); return; }
+  catch(e) {
+    await bot.sendMessage(chatId, `❌ Error OpenAI:\n\`${e.message}\``);
+    console.error('OpenAI error (setup):', e);
+    return;
+  }
 
   if (reply.includes('PERSONAJE_LISTO|')) {
     const raw = reply.split('PERSONAJE_LISTO|')[1];
