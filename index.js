@@ -13,7 +13,7 @@ const {
   formatVoteProgress,
   formatVoteResult,
 } = require('./src/game/formatters')
-const { callClaude, generateWorldContext, parseDMCommands } = require('./src/services/dm')
+const { buildSetupPrompt, callClaude, generateWorldContext, parseDMCommands } = require('./src/services/dm')
 const storage = require('./src/services/storage')
 const { safeSend, sendWithActions, sendVote, sendLevelUpMessage } = require('./src/telegram/messages')
 
@@ -235,7 +235,15 @@ async function sendSetupPrompt(chatId, text, groupChat = false) {
 
 async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackText = 'Como se llamara tu heroe?') {
   await bot.sendChatAction(chatId, 'typing')
-  await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat)
+  let reply
+
+  try {
+    reply = await callClaude(game, 'Continua con la creacion del personaje.', buildSetupPrompt(game))
+  } catch (error) {
+    reply = buildLocalSetupPrompt(game) || fallbackText
+  }
+
+  await sendSetupPrompt(chatId, reply, groupChat)
 }
 
 async function beginNewGame(msg) {
@@ -308,9 +316,17 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     game.setupSubStep = 'name'
     game.setupBuffer = {}
     if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
-    reply = buildLocalSetupPrompt(game)
+    try {
+      reply = await callClaude(game, 'El jugador quiere rehacer el personaje desde el principio.', buildSetupPrompt(game))
+    } catch (error) {
+      reply = buildLocalSetupPrompt(game)
+    }
   } else {
-    reply = buildLocalSetupPrompt(game)
+    try {
+      reply = await callClaude(game, userText, buildSetupPrompt(game))
+    } catch (error) {
+      reply = buildLocalSetupPrompt(game)
+    }
   }
 
   if (reply.includes('PERSONAJE_LISTO|')) {
