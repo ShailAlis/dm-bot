@@ -14,11 +14,11 @@ function formatPlayerCard(player) {
 
   return [
     `*${player.name}*`,
-    `${player.race} ${player.class} · Nivel ${player.level || 1}`,
+    `${player.race} ${player.class} - Nivel ${player.level || 1}`,
     `HP: ${player.hp}/${player.maxHp} ${makeProgressBar(player.hp, player.maxHp)}`,
-    `CA: ${player.ac} · Competencia: +${proficiency}`,
-    `FUE ${player.stats.str} · DES ${player.stats.dex} · CON ${player.stats.con}`,
-    nextXp ? `XP: ${player.xp}/${nextXp}` : `XP: ${player.xp} (máximo)`,
+    `CA: ${player.ac} - Competencia: +${proficiency}`,
+    `FUE ${player.stats.str} - DES ${player.stats.dex} - CON ${player.stats.con}`,
+    nextXp ? `XP: ${player.xp}/${nextXp}` : `XP: ${player.xp} (maximo)`,
     `Equipo: ${player.inventory.slice(0, 4).join(', ') || 'Sin equipo destacado'}`,
     `Rasgo: ${player.trait}`,
   ].join('\n')
@@ -34,7 +34,7 @@ function formatXpSummary(players) {
   players.forEach((player) => {
     const nextXp = xpForNextLevel(player.level || 1)
     const bar = makeProgressBar(player.xp || 0, nextXp || player.xp || 1)
-    lines.push(`*${player.name}* · Nivel ${player.level || 1}`)
+    lines.push(`*${player.name}* - Nivel ${player.level || 1}`)
     lines.push(nextXp ? `${player.xp || 0}/${nextXp} XP ${bar}` : `${player.xp || 0} XP ${bar}`)
     lines.push('')
   })
@@ -46,9 +46,9 @@ function formatAbilitiesSummary(players) {
   const lines = ['*Habilidades del grupo*', '']
 
   players.forEach((player) => {
-    lines.push(`*${player.name}* (${player.class} · Nivel ${player.level || 1})`)
+    lines.push(`*${player.name}* (${player.class} - Nivel ${player.level || 1})`)
     if (!player.abilities || player.abilities.length === 0) {
-      lines.push('_Sin habilidades especiales todavía_')
+      lines.push('_Sin habilidades especiales todavia_')
     } else {
       player.abilities.forEach((ability) => lines.push(`- ${ability}`))
     }
@@ -106,7 +106,7 @@ function formatLevelUp(levelUp) {
   const lines = [
     `*${levelUp.name}* sube a nivel ${levelUp.newLevel}`,
     '',
-    `HP máximo: +${levelUp.hpGain}`,
+    `HP maximo: +${levelUp.hpGain}`,
     `XP total: ${levelUp.xp}`,
   ]
 
@@ -121,8 +121,8 @@ function formatLevelUp(levelUp) {
 
 function formatRoll(roll) {
   let suffix = ''
-  if (roll.resultado === 20) suffix = ' · crítico'
-  if (roll.resultado === 1) suffix = ' · pifia'
+  if (roll.resultado === 20) suffix = ' - critico'
+  if (roll.resultado === 1) suffix = ' - pifia'
   return `Tirada de *${roll.tipo}*: *${roll.resultado}*/20${suffix}`
 }
 
@@ -131,7 +131,7 @@ function formatVoteProgress(username, choice) {
 }
 
 function formatVoteResult(summary, winner) {
-  return `*Votación completada*\nResultado: ${summary}\n\nDecisión del grupo: *${winner}*`
+  return `*Votacion completada*\nResultado: ${summary}\n\nDecision del grupo: *${winner}*`
 }
 
 module.exports = {

@@ -34,7 +34,7 @@ async function sendVote(bot, chatId, question, options, requiredVoters, storage)
     : ''
 
   await storage.createVote(chatId, question, options, requiredVoters)
-  await safeSend(bot, chatId, `*Decisión de grupo*\n\n${question}${footer}`, { reply_markup: keyboard })
+  await safeSend(bot, chatId, `*Decision de grupo*\n\n${question}${footer}`, { reply_markup: keyboard })
 }
 
 async function sendLevelUpMessage(bot, chatId, levelUp) {

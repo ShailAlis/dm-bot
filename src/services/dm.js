@@ -23,7 +23,7 @@ function buildWorldContextString(context) {
 
   return [
     'CONTEXTO DEL MUNDO:',
-    `Localización: ${context.town.name} (${context.town.type}, ~${context.town.population} habitantes)`,
+    `Localizacion: ${context.town.name} (${context.town.type}, ~${context.town.population} habitantes)`,
     `Evento actual: ${context.town.event}`,
     `Lugar destacado: ${context.town.landmark}`,
     `Taberna: ${context.tavern.name} (${context.tavern.wealth})`,
@@ -48,7 +48,7 @@ function buildSystemPrompt(game) {
       + `FUE:${player.stats.str} DES:${player.stats.dex} CON:${player.stats.con} `
       + `INT:${player.stats.int} SAB:${player.stats.wis} CAR:${player.stats.cha} `
       + `Prof:+${PROFICIENCY_BONUS[(player.level || 1) - 1]} `
-      + `Rasgo:"${player.trait}" Motivación:"${player.motivation}" `
+      + `Rasgo:"${player.trait}" Motivacion:"${player.motivation}" `
       + `Habilidades:[${(player.abilities || []).join(', ') || 'ninguna'}] `
       + `Inv:[${player.inventory.join(', ')}]`
     ))
@@ -74,40 +74,40 @@ ${memoryBlocks.length ? `MEMORIA:\n${memoryBlocks.join('\n\n')}` : ''}
 ${worldContext}
 
 INSTRUCCIONES:
-- Narra en español con un estilo claro, evocador y fácil de seguir.
+- Narra en espanol con un estilo claro, evocador y facil de seguir.
 - Usa niveles, habilidades, rasgos y contexto del mundo en la narrativa.
 - Prioriza frases comprensibles y decisiones concretas.
-- Cuando una acción requiera tirada: TIRADA:[tipo]
+- Cuando una accion requiera tirada: TIRADA:[tipo]
 - Para actualizar HP: UPDATE_HP:[nombre]:[valor]
 - Para dar XP: XP:[nombre]:[cantidad]
-- Para añadir objeto: ADD_ITEM:[nombre]:[objeto]
+- Para anadir objeto: ADD_ITEM:[nombre]:[objeto]
 - Para quitar objeto: REMOVE_ITEM:[nombre]:[objeto]
-- Memoria: MEMORIA_DECISION:[título]|[desc] / MEMORIA_LUGAR:[nombre]|[desc] / MEMORIA_NPC:[nombre]|[desc]
-- Crónica: CRONICA:[párrafo épico de 2-3 frases]
-- Para una decisión de grupo importante: VOTACION:[pregunta]|[opción1]|[opción2]|[opción3]
-- Usa Markdown sencillo de Telegram (*negrita*, _cursiva_). Máximo 3 párrafos.
-- Al final: ACCIONES: acción1 | acción2 | acción3`
+- Memoria: MEMORIA_DECISION:[titulo]|[desc] / MEMORIA_LUGAR:[nombre]|[desc] / MEMORIA_NPC:[nombre]|[desc]
+- Cronica: CRONICA:[parrafo epico de 2-3 frases]
+- Para una decision de grupo importante: VOTACION:[pregunta]|[opcion1]|[opcion2]|[opcion3]
+- Usa Markdown sencillo de Telegram (*negrita*, _cursiva_). Maximo 3 parrafos.
+- Al final: ACCIONES: accion1 | accion2 | accion3`
 }
 
 function buildSetupPrompt(game) {
   const draft = { ...game.setupBuffer }
   delete draft.pendingPlayer
 
-  return `Eres el asistente de creación de personajes de D&D 5e en Telegram.
-Guía paso a paso en español, con frases breves, claras y animadas.
+  return `Eres el asistente de creacion de personajes de D&D 5e en Telegram.
+Guia paso a paso en espanol, con frases breves, claras y animadas.
 
 PASO: ${game.setupSubStep}
 JUGADOR: ${game.setupStep + 1} de ${game.numPlayers}
 DATOS: ${JSON.stringify(draft)}
 
 - "name": pide el nombre del personaje.
-- "race": lista 9 razas numeradas con una descripción de 3 palabras.
-- "class": lista 12 clases numeradas con una descripción de 3 palabras.
+- "race": lista 9 razas numeradas con una descripcion de 3 palabras.
+- "class": lista 12 clases numeradas con una descripcion de 3 palabras.
 - "background": ofrece 6 trasfondos adaptados a su raza y clase.
 - "trait": propone un rasgo de personalidad con 4 ejemplos.
-- "motivation": propone una motivación con 4 ejemplos.
+- "motivation": propone una motivacion con 4 ejemplos.
 - "confirm": resume el personaje y termina con CONFIRMAR_PERSONAJE.
-- Cuando confirme, responde con: PERSONAJE_LISTO|[nombre]|[raza]|[clase]|[trasfondo]|[rasgo]|[motivación]
+- Cuando confirme, responde con: PERSONAJE_LISTO|[nombre]|[raza]|[clase]|[trasfondo]|[rasgo]|[motivacion]
 
 Usa Markdown sencillo de Telegram.`
 }

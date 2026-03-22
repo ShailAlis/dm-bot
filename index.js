@@ -17,10 +17,14 @@ const { buildSetupPrompt, callClaude, generateWorldContext, parseDMCommands } = 
 const storage = require('./src/services/storage')
 const { safeSend, sendWithActions, sendVote, sendLevelUpMessage } = require('./src/telegram/messages')
 
+const REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'DATABASE_URL', 'ANTHROPIC_API_KEY']
+
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true })
 
 const SETUP_STEPS = ['name', 'race', 'class', 'background', 'trait', 'motivation', 'confirm']
 const PLAYER_COUNT_ACTIONS = ['1 jugador', '2 jugadores', '3 jugadores', '4 jugadores']
+const YES_WORDS = new Set(['si', 'sí', 's', 'ok', 'vale', 'confirmar', 'listo'])
+
 const GROUP_TELEGRAM_COMMANDS = [
   { command: 'nueva', description: 'Inicia o reinicia una partida' },
   { command: 'unirse', description: 'Une un jugador a la partida actual' },
@@ -32,6 +36,7 @@ const GROUP_TELEGRAM_COMMANDS = [
   { command: 'cronica', description: 'Exporta la cronica de la aventura' },
   { command: 'ayuda', description: 'Muestra la ayuda disponible' },
 ]
+
 const PRIVATE_TELEGRAM_COMMANDS = [
   { command: 'nueva', description: 'Inicia una aventura en este chat' },
   { command: 'continuar', description: 'Recupera tu ultima aventura guardada' },
@@ -43,8 +48,27 @@ const PRIVATE_TELEGRAM_COMMANDS = [
   { command: 'ayuda', description: 'Muestra la ayuda disponible' },
 ]
 
+function requireEnv(name) {
+  return typeof process.env[name] === 'string' && process.env[name].trim().length > 0
+}
+
+function validateEnv() {
+  const missing = REQUIRED_ENV_VARS.filter((name) => !requireEnv(name))
+  if (missing.length > 0) {
+    throw new Error(`Faltan variables de entorno requeridas: ${missing.join(', ')}`)
+  }
+}
+
 function isPrivateChat(chat) {
   return chat.type === 'private'
+}
+
+function normalizeUserText(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
 }
 
 function getPendingPlayer(game) {
@@ -52,11 +76,77 @@ function getPendingPlayer(game) {
 }
 
 function setPendingPlayer(game, userId, username) {
-  game.setupBuffer = { pendingPlayer: { userId, username } }
+  game.setupBuffer = { ...game.setupBuffer, pendingPlayer: { userId, username } }
 }
 
 function clearPendingPlayer(game) {
-  game.setupBuffer = {}
+  const nextBuffer = { ...game.setupBuffer }
+  delete nextBuffer.pendingPlayer
+  game.setupBuffer = nextBuffer
+}
+
+function getSetupDraft(game) {
+  const draft = { ...game.setupBuffer }
+  delete draft.pendingPlayer
+  return draft
+}
+
+function buildSetupSummary(game) {
+  const draft = getSetupDraft(game)
+  return [
+    '*Resumen provisional del personaje*',
+    '',
+    `Nombre: ${draft.name || '-'}`,
+    `Raza: ${draft.race || '-'}`,
+    `Clase: ${draft.class || '-'}`,
+    `Trasfondo: ${draft.background || '-'}`,
+    `Rasgo: ${draft.trait || '-'}`,
+    `Motivacion: ${draft.motivation || '-'}`,
+    '',
+    'Si todo esta bien, responde: Si, estoy listo',
+  ].join('\n')
+}
+
+function buildSetupFallback(game) {
+  const step = game.setupSubStep
+
+  if (step === 'race') {
+    return 'Elige una raza para tu personaje: humano, elfo, enano, mediano, draconido, gnomo, semielfo, semiorco o tiflin.'
+  }
+  if (step === 'class') {
+    return 'Elige una clase: guerrero, mago, picaro, clerigo, barbaro, bardo, druida, explorador, paladin, hechicero, brujo o monje.'
+  }
+  if (step === 'background') {
+    return 'Ahora dime el trasfondo de tu personaje.'
+  }
+  if (step === 'trait') {
+    return 'Describe un rasgo de personalidad importante de tu personaje.'
+  }
+  if (step === 'motivation') {
+    return 'Cual es la principal motivacion de tu personaje?'
+  }
+  if (step === 'confirm') {
+    return buildSetupSummary(game)
+  }
+
+  return 'Sigue con la creacion del personaje.'
+}
+
+function buildReadyCharacterPayload(game) {
+  const draft = getSetupDraft(game)
+  return `PERSONAJE_LISTO|${draft.name || 'Heroe'}|${draft.race || 'Humano'}|${draft.class || 'Guerrero'}|${draft.background || 'Aventurero'}|${draft.trait || 'Misterioso'}|${draft.motivation || 'Buscar fortuna'}`
+}
+
+function shouldCompleteSetupLocally(game, userText) {
+  return game.setupSubStep === 'confirm' && YES_WORDS.has(normalizeUserText(userText))
+}
+
+function getEligibleVoterIds(players) {
+  const unique = new Set()
+  for (const player of players) {
+    if (player.telegramUserId) unique.add(player.telegramUserId)
+  }
+  return [...unique]
 }
 
 async function saveAndCacheGame(chatId, game) {
@@ -113,32 +203,59 @@ async function beginNewGame(msg) {
   await sendWithActions(
     bot,
     chatId,
-    '*Nueva partida creada*\n\nElige cuántos jugadores participaran. Despues, quien haya lanzado /nueva empezara con el primer personaje y el resto podra usar /unirse.',
+    '*Nueva partida creada*\n\nElige cuantos jugadores participaran. Despues, quien haya lanzado /nueva empezara con el primer personaje y el resto podra usar /unirse.',
     PLAYER_COUNT_ACTIONS,
   )
 }
 
+function extractCharacterFromReply(reply, fallbackGame) {
+  const rawCharacter = reply.split('PERSONAJE_LISTO|')[1] || buildReadyCharacterPayload(fallbackGame).split('PERSONAJE_LISTO|')[1]
+  const parts = rawCharacter
+    .split('|')
+    .map((part) => part.trim().replace(/[\r\n].*/, '').trim())
+
+  while (parts.length < 6) parts.push('')
+  return parts
+}
+
 async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false) {
   await bot.sendChatAction(chatId, 'typing')
-  let reply
 
-  try {
-    reply = await callClaude(game, userText, buildSetupPrompt(game))
-  } catch (error) {
-    await sendClaudeError(chatId, error)
-    return
+  const pendingPlayer = getPendingPlayer(game)
+  const currentStepIndex = SETUP_STEPS.indexOf(game.setupSubStep)
+  if (currentStepIndex === -1) {
+    game.setupSubStep = 'name'
+  }
+
+  if (game.setupSubStep === 'name') game.setupBuffer.name = userText
+  if (game.setupSubStep === 'race') game.setupBuffer.race = userText
+  if (game.setupSubStep === 'class') game.setupBuffer.class = userText
+  if (game.setupSubStep === 'background') game.setupBuffer.background = userText
+  if (game.setupSubStep === 'trait') game.setupBuffer.trait = userText
+  if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText
+  if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
+
+  if (currentStepIndex >= 0 && currentStepIndex < SETUP_STEPS.length - 1) {
+    game.setupSubStep = SETUP_STEPS[currentStepIndex + 1]
+  }
+
+  let reply
+  if (shouldCompleteSetupLocally(game, userText)) {
+    reply = buildReadyCharacterPayload(game)
+  } else {
+    try {
+      reply = await callClaude(game, userText, buildSetupPrompt(game))
+    } catch (error) {
+      reply = buildSetupFallback(game)
+    }
   }
 
   if (reply.includes('PERSONAJE_LISTO|')) {
-    const rawCharacter = reply.split('PERSONAJE_LISTO|')[1]
-    const [name, race, playerClass, background, trait, motivation] = rawCharacter
-      .split('|')
-      .map((part) => part.trim().replace(/[\r\n].*/, '').trim())
-
+    const [name, race, playerClass, background, trait, motivation] = extractCharacterFromReply(reply, game)
     const player = createPlayer(
-      name,
-      race,
-      playerClass,
+      name || 'Heroe',
+      race || 'Humano',
+      playerClass || 'Guerrero',
       background || 'Aventurero',
       trait || 'Misterioso',
       motivation || 'Buscar fortuna',
@@ -153,7 +270,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     game.history = []
 
     await saveAndCacheGame(chatId, game)
-    await safeSend(bot, chatId, `*${name}* se une a la aventura como ${race} ${playerClass} de nivel 1.`)
+    await safeSend(bot, chatId, `*${player.name}* se une a la aventura como ${player.race} ${player.class} de nivel 1.`)
 
     if (game.setupStep >= game.numPlayers) {
       await startAdventure(chatId, game)
@@ -171,26 +288,8 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     return
   }
 
-  const pendingPlayer = getPendingPlayer(game)
-  const currentStepIndex = SETUP_STEPS.indexOf(game.setupSubStep)
-
-  if (game.setupSubStep === 'name') game.setupBuffer.name = userText
-  if (game.setupSubStep === 'race') game.setupBuffer.race = userText
-  if (game.setupSubStep === 'class') game.setupBuffer.class = userText
-  if (game.setupSubStep === 'background') game.setupBuffer.background = userText
-  if (game.setupSubStep === 'trait') game.setupBuffer.trait = userText
-  if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText
-  if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
-
-  if (currentStepIndex < SETUP_STEPS.length - 1) {
-    game.setupSubStep = SETUP_STEPS[currentStepIndex + 1]
-  }
-
   await saveAndCacheGame(chatId, game)
-
-  const actions = reply.includes('CONFIRMAR_PERSONAJE')
-    ? ['Si, estoy listo', 'Quiero cambiar algo']
-    : []
+  const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['Si, estoy listo', 'Quiero cambiar algo'] : []
   const cleanReply = reply.replace('CONFIRMAR_PERSONAJE', '').trim()
   await sendWithActions(bot, chatId, cleanReply, actions)
 }
@@ -206,12 +305,14 @@ async function handleDmReply(chatId, game, reply) {
     await sendLevelUpMessage(bot, chatId, levelUp)
   }
 
-  if (voteData.active) {
-    const voterIds = game.players.map((player) => player.telegramUserId).filter(Boolean)
+  const voterIds = getEligibleVoterIds(game.players)
+  if (voteData.active && voterIds.length >= 2) {
     await sendVote(bot, chatId, voteData.question, voteData.options, voterIds, storage)
-  } else {
-    await sendWithActions(bot, chatId, formatDirectorMessage(clean), actions)
+    return
   }
+
+  const fallbackActions = voteData.active && voteData.options.length > 0 ? voteData.options : actions
+  await sendWithActions(bot, chatId, formatDirectorMessage(clean), fallbackActions)
 }
 
 async function startAdventure(chatId, game) {
@@ -254,7 +355,6 @@ async function continueAdventure(chatId, game) {
 
   await bot.sendChatAction(chatId, 'typing')
   let reply
-
   try {
     reply = await callClaude(game, 'Retoma la aventura con un breve resumen de lo ocurrido y plantea la situacion actual.')
   } catch (error) {
@@ -267,65 +367,70 @@ async function continueAdventure(chatId, game) {
 }
 
 bot.on('callback_query', async (query) => {
-  const chatId = query.message.chat.id
-  const userId = query.from.id
-  const username = query.from.first_name || 'Jugador'
-  const optionIndex = Number.parseInt(query.data.replace('vote_', ''), 10)
-  const game = await storage.getGame(chatId)
-
-  if (!game || game.phase !== 'adventure') {
-    await bot.answerCallbackQuery(query.id, { text: 'No hay una votacion activa.' })
-    return
-  }
-
-  const vote = await storage.getActiveVote(chatId)
-  if (!vote) {
-    await bot.answerCallbackQuery(query.id, { text: 'No hay una votacion activa.' })
-    return
-  }
-
-  const choice = vote.options[optionIndex]
-  if (!choice) {
-    await bot.answerCallbackQuery(query.id, { text: 'La opcion no es valida.' })
-    return
-  }
-
-  const result = await storage.castVote(chatId, userId, choice)
-  if (!result) {
-    await bot.answerCallbackQuery(query.id, { text: 'No se pudo registrar el voto.' })
-    return
-  }
-
-  await bot.answerCallbackQuery(query.id, { text: `Has votado: "${choice}"` })
-  await safeSend(bot, chatId, formatVoteProgress(username, choice))
-
-  if (!result.allVoted) return
-
-  await storage.clearVote(chatId)
-
-  const counts = {}
-  Object.values(result.vote.votes).forEach((currentChoice) => {
-    counts[currentChoice] = (counts[currentChoice] || 0) + 1
-  })
-
-  const winner = Object.entries(counts).sort((left, right) => right[1] - left[1])[0][0]
-  const summary = Object.entries(counts)
-    .map(([option, totalVotes]) => `${option}: ${totalVotes} voto(s)`)
-    .join(', ')
-
-  await safeSend(bot, chatId, formatVoteResult(summary, winner))
-  await bot.sendChatAction(chatId, 'typing')
-
-  let reply
   try {
-    reply = await callClaude(game, `El grupo ha decidido por votacion: "${winner}". Narra las consecuencias.`)
-  } catch (error) {
-    await sendClaudeError(chatId, error)
-    return
-  }
+    const chatId = query.message.chat.id
+    const userId = query.from.id
+    const username = query.from.first_name || 'Jugador'
+    const optionIndex = Number.parseInt(query.data.replace('vote_', ''), 10)
+    const game = await storage.getGame(chatId)
 
-  await handleDmReply(chatId, game, reply)
-  await saveAndCacheGame(chatId, game)
+    if (!game || game.phase !== 'adventure') {
+      await bot.answerCallbackQuery(query.id, { text: 'No hay una votacion activa.' })
+      return
+    }
+
+    const vote = await storage.getActiveVote(chatId)
+    if (!vote) {
+      await bot.answerCallbackQuery(query.id, { text: 'No hay una votacion activa.' })
+      return
+    }
+
+    const choice = vote.options?.[optionIndex]
+    if (!choice) {
+      await bot.answerCallbackQuery(query.id, { text: 'La opcion no es valida.' })
+      return
+    }
+
+    const result = await storage.castVote(chatId, userId, choice)
+    if (!result) {
+      await bot.answerCallbackQuery(query.id, { text: 'No se pudo registrar el voto.' })
+      return
+    }
+
+    await bot.answerCallbackQuery(query.id, { text: `Has votado: "${choice}"` })
+    await safeSend(bot, chatId, formatVoteProgress(username, choice))
+
+    if (!result.allVoted) return
+
+    await storage.clearVote(chatId)
+
+    const counts = {}
+    Object.values(result.vote.votes).forEach((currentChoice) => {
+      counts[currentChoice] = (counts[currentChoice] || 0) + 1
+    })
+
+    const winner = Object.entries(counts).sort((left, right) => right[1] - left[1])[0][0]
+    const summary = Object.entries(counts)
+      .map(([option, totalVotes]) => `${option}: ${totalVotes} voto(s)`)
+      .join(', ')
+
+    await safeSend(bot, chatId, formatVoteResult(summary, winner))
+    await bot.sendChatAction(chatId, 'typing')
+
+    let reply
+    try {
+      reply = await callClaude(game, `El grupo ha decidido por votacion: "${winner}". Narra las consecuencias.`)
+    } catch (error) {
+      await sendClaudeError(chatId, error)
+      return
+    }
+
+    await handleDmReply(chatId, game, reply)
+    await saveAndCacheGame(chatId, game)
+  } catch (error) {
+    console.error('Error manejando votacion:', error)
+    await bot.answerCallbackQuery(query.id, { text: 'Ha ocurrido un error.' })
+  }
 })
 
 bot.onText(/\/start|\/nueva/, async (msg) => {
@@ -337,6 +442,11 @@ bot.onText(/\/unirse/, async (msg) => {
   const userId = msg.from.id
   const username = msg.from.first_name || 'Jugador'
   const game = await storage.getGame(chatId)
+
+  if (isPrivateChat(msg.chat)) {
+    await safeSend(bot, chatId, 'En chat privado no hace falta /unirse. Usa /nueva para empezar.')
+    return
+  }
 
   if (!game || game.phase !== 'setup') {
     await safeSend(bot, chatId, 'No hay una partida en configuracion. Usa /nueva primero.')
@@ -371,6 +481,7 @@ bot.onText(/\/unirse/, async (msg) => {
 
   game.setupSubStep = 'name'
   game.history = []
+  game.setupBuffer = {}
   setPendingPlayer(game, userId, username)
   await saveAndCacheGame(chatId, game)
 
@@ -499,80 +610,85 @@ bot.onText(/\/ayuda/, async (msg) => {
 })
 
 bot.on('message', async (msg) => {
-  if (!msg.text || msg.text.startsWith('/')) return
+  try {
+    if (!msg.text || msg.text.startsWith('/')) return
 
-  const chatId = msg.chat.id
-  const userId = msg.from.id
-  const username = msg.from.first_name || 'Aventurero'
-  const text = msg.text.trim()
-  const game = await storage.getGame(chatId)
-  const groupChat = !isPrivateChat(msg.chat)
+    const chatId = msg.chat.id
+    const userId = msg.from.id
+    const username = msg.from.first_name || 'Aventurero'
+    const text = msg.text.trim()
+    const game = await storage.getGame(chatId)
+    const groupChat = !isPrivateChat(msg.chat)
 
-  if (game.phase === 'idle') {
-    await safeSend(bot, chatId, 'Usa /nueva para comenzar o /continuar para retomar la aventura.')
-    return
-  }
+    if (game.phase === 'idle') {
+      await safeSend(bot, chatId, 'Usa /nueva para comenzar o /continuar para retomar la aventura.')
+      return
+    }
 
-  if (game.phase === 'setup') {
-    if (game.setupSubStep === 'num_players') {
-      const playerCount = Number.parseInt(text, 10)
-      if (playerCount >= 1 && playerCount <= 4) {
-        game.numPlayers = playerCount
-        game.setupSubStep = 'name'
-        setPendingPlayer(game, userId, username)
-        await saveAndCacheGame(chatId, game)
+    if (game.phase === 'setup') {
+      if (game.setupSubStep === 'num_players') {
+        const playerCount = Number.parseInt(text, 10)
+        if (playerCount >= 1 && playerCount <= 4) {
+          game.numPlayers = playerCount
+          game.setupSubStep = 'name'
+          setPendingPlayer(game, userId, username)
+          await saveAndCacheGame(chatId, game)
 
-        if (groupChat) {
-          await safeSend(bot, chatId, `Perfecto, seran ${playerCount} jugadores.\n\nEmpezamos con tu personaje. Cuando termines, el resto podra usar /unirse.`)
+          if (groupChat) {
+            await safeSend(bot, chatId, `Perfecto, seran ${playerCount} jugadores.\n\nEmpezamos con tu personaje. Cuando termines, el resto podra usar /unirse.`)
+          }
+
+          await promptForCurrentPlayer(chatId, game)
+        } else {
+          await sendWithActions(bot, chatId, 'Elige un numero entre 1 y 4 jugadores.', PLAYER_COUNT_ACTIONS)
+        }
+        return
+      }
+
+      if (groupChat) {
+        const pendingPlayer = getPendingPlayer(game)
+        if (!pendingPlayer) {
+          await safeSend(bot, chatId, 'Ahora mismo nadie esta creando personaje. El siguiente jugador puede usar /unirse.')
+          return
         }
 
-        await promptForCurrentPlayer(chatId, game)
-      } else {
-        await sendWithActions(bot, chatId, 'Elige un numero entre 1 y 4 jugadores.', PLAYER_COUNT_ACTIONS)
+        if (pendingPlayer.userId !== userId) {
+          await safeSend(bot, chatId, `${pendingPlayer.username} esta creando personaje ahora mismo. Cuando termine, usa /unirse.`)
+          return
+        }
       }
+
+      await handleSetup(chatId, game, text, userId, username, groupChat)
       return
     }
 
-    if (groupChat) {
-      const pendingPlayer = getPendingPlayer(game)
-      if (!pendingPlayer) {
-        await safeSend(bot, chatId, 'Ahora mismo nadie esta creando personaje. El siguiente jugador puede usar /unirse.')
+    if (game.phase === 'adventure') {
+      const playerCharacter = game.players.find((player) => player.telegramUserId === userId)
+      const actorLabel = playerCharacter ? playerCharacter.name : username
+
+      await safeSend(bot, chatId, `_${actorLabel} actua..._`)
+      await bot.sendChatAction(chatId, 'typing')
+
+      const userMessage = playerCharacter ? `[${playerCharacter.name}]: ${text}` : `[${username}]: ${text}`
+      let reply
+      try {
+        reply = await callClaude(game, userMessage)
+      } catch (error) {
+        await sendClaudeError(chatId, error)
         return
       }
 
-      if (pendingPlayer.userId !== userId) {
-        await safeSend(bot, chatId, `${pendingPlayer.username} esta creando personaje ahora mismo. Cuando termine, usa /unirse.`)
-        return
-      }
+      await handleDmReply(chatId, game, reply)
+      await saveAndCacheGame(chatId, game)
     }
-
-    await handleSetup(chatId, game, text, userId, username, groupChat)
-    return
-  }
-
-  if (game.phase === 'adventure') {
-    const playerCharacter = game.players.find((player) => player.telegramUserId === userId)
-    const actorLabel = playerCharacter ? playerCharacter.name : username
-
-    await safeSend(bot, chatId, `_${actorLabel} actua..._`)
-    await bot.sendChatAction(chatId, 'typing')
-
-    const userMessage = playerCharacter ? `[${playerCharacter.name}]: ${text}` : `[${username}]: ${text}`
-    let reply
-
-    try {
-      reply = await callClaude(game, userMessage)
-    } catch (error) {
-      await sendClaudeError(chatId, error)
-      return
-    }
-
-    await handleDmReply(chatId, game, reply)
-    await saveAndCacheGame(chatId, game)
+  } catch (error) {
+    console.error('Error manejando mensaje:', error)
+    await safeSend(bot, msg.chat.id, 'Ha ocurrido un error procesando el mensaje. Intentalo de nuevo.')
   }
 })
 
 async function bootstrap() {
+  validateEnv()
   await storage.initDB()
   await registerTelegramCommands()
   console.log('Bot DM Automatico iniciado')
