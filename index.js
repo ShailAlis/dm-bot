@@ -295,6 +295,21 @@ function extractCharacterFromReply(reply, fallbackGame) {
   return parts
 }
 
+function buildCharacterDataFromSetup(reply, game) {
+  const draft = getSetupDraft(game)
+  const [nameFromReply, raceFromReply, classFromReply, backgroundFromReply, traitFromReply, motivationFromReply] =
+    extractCharacterFromReply(reply, game)
+
+  return {
+    name: draft.name || nameFromReply || 'Heroe',
+    race: resolveRaceValue(draft.race || raceFromReply || 'humano'),
+    playerClass: resolveClassValue(draft.class || classFromReply || 'guerrero'),
+    background: draft.background || backgroundFromReply || 'Aventurero',
+    trait: draft.trait || traitFromReply || 'Misterioso',
+    motivation: draft.motivation || motivationFromReply || 'Buscar fortuna',
+  }
+}
+
 function resolveIndexedOption(value, options) {
   const normalized = normalizeUserText(value)
   const numeric = Number.parseInt(normalized, 10)
@@ -361,16 +376,14 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     }
 
     if (reply.includes('PERSONAJE_LISTO|')) {
-      const [name, rawRace, rawClass, background, trait, motivation] = extractCharacterFromReply(reply, game)
-      const race = resolveRaceValue(rawRace)
-      const playerClass = resolveClassValue(rawClass)
+      const characterData = buildCharacterDataFromSetup(reply, game)
       const player = createPlayer(
-        name || 'Heroe',
-        race || 'Humano',
-        playerClass || 'Guerrero',
-        background || 'Aventurero',
-        trait || 'Misterioso',
-        motivation || 'Buscar fortuna',
+        characterData.name,
+        characterData.race,
+        characterData.playerClass,
+        characterData.background,
+        characterData.trait,
+        characterData.motivation,
         fromUserId,
         fromUsername,
       )
