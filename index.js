@@ -287,7 +287,7 @@ async function sendClaudeError(chatId, error) {
   await safeSend(bot, chatId, `Error con Claude:\n\`${error.message}\``)
 }
 
-async function sendSetupPrompt(chatId, text, groupChat = false) {
+async function sendSetupPrompt(chatId, text, groupChat = false, replyToMessageId = null) {
   const game = await storage.getGame(chatId)
   const actions = getSetupActions(game)
 
@@ -297,15 +297,15 @@ async function sendSetupPrompt(chatId, text, groupChat = false) {
   }
 
   const options = groupChat
-    ? { reply_markup: { force_reply: true, selective: true } }
+    ? { reply_markup: { force_reply: true }, ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}) }
     : { reply_markup: { remove_keyboard: true } }
 
   await safeSend(bot, chatId, text, options)
 }
 
-async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackText = 'Como se llamara tu heroe?') {
+async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackText = 'Como se llamara tu heroe?', replyToMessageId = null) {
   await bot.sendChatAction(chatId, 'typing')
-  await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat)
+  await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat, replyToMessageId)
 }
 
 async function beginNewGame(msg) {
@@ -388,7 +388,7 @@ function resolveClassValue(value) {
   return resolveIndexedOption(stripLeadingIndex(value), CLASS_OPTIONS)
 }
 
-async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false) {
+async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false, replyToMessageId = null) {
   try {
     await bot.sendChatAction(chatId, 'typing')
 
@@ -399,7 +399,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     }
 
     if (game.setupSubStep === 'name' && isPlayerCountSelection(userText)) {
-      await sendSetupPrompt(chatId, 'Ese boton era solo para elegir cuantos jugadores habra. Ahora escribe el nombre del personaje.', groupChat)
+      await sendSetupPrompt(chatId, 'Ese boton era solo para elegir cuantos jugadores habra. Ahora escribe el nombre del personaje.', groupChat, replyToMessageId)
       return
     }
 
@@ -479,12 +479,12 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     if (actions.length > 0) {
       await sendWithActions(bot, chatId, cleanReply, actions)
     } else {
-      await sendSetupPrompt(chatId, cleanReply, groupChat)
+      await sendSetupPrompt(chatId, cleanReply, groupChat, replyToMessageId)
     }
   } catch (error) {
     console.error('Error en handleSetup:', error)
     await saveAndCacheGame(chatId, game)
-    await sendSetupPrompt(chatId, buildLocalSetupPrompt(game), groupChat)
+    await sendSetupPrompt(chatId, buildLocalSetupPrompt(game), groupChat, replyToMessageId)
   }
 }
 
@@ -690,7 +690,7 @@ bot.onText(/\/unirse/, async (msg) => {
   await saveAndCacheGame(chatId, game)
 
   await safeSend(bot, chatId, `*${username}* se une a la partida. Vamos a crear tu personaje.`)
-  await promptForCurrentPlayer(chatId, game, !isPrivateChat(msg.chat))
+  await promptForCurrentPlayer(chatId, game, !isPrivateChat(msg.chat), 'Como se llamara tu heroe?', msg.message_id)
 })
 
 bot.onText(/\/estado/, async (msg) => {
@@ -844,7 +844,7 @@ bot.on('message', async (msg) => {
           await safeSend(bot, chatId, `Perfecto, crearas ${playerCount} personaje(s) en esta partida.\n\nEmpezamos con el primero.`)
         }
 
-        await promptForCurrentPlayer(chatId, game, groupChat)
+        await promptForCurrentPlayer(chatId, game, groupChat, 'Como se llamara tu heroe?', msg.message_id)
         } else {
           await sendWithActions(bot, chatId, 'Elige un numero entre 1 y 4 jugadores.', PLAYER_COUNT_ACTIONS)
         }
@@ -864,7 +864,7 @@ bot.on('message', async (msg) => {
         }
       }
 
-      await handleSetup(chatId, game, text, userId, username, groupChat)
+      await handleSetup(chatId, game, text, userId, username, groupChat, msg.message_id)
       return
     }
 
