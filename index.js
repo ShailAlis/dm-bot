@@ -490,6 +490,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
 
 async function handleDmReply(chatId, game, reply, groupChat = false) {
   const { clean, rolls, actions, levelUps, voteData } = await parseDMCommands(chatId, game, reply, storage)
+  const formattedNarration = formatDirectorMessage(clean)
 
   for (const currentRoll of rolls) {
     await safeSend(bot, chatId, formatRoll(currentRoll))
@@ -501,18 +502,19 @@ async function handleDmReply(chatId, game, reply, groupChat = false) {
 
   const voterIds = getEligibleVoterIds(game.players)
   if (voteData.active && voterIds.length >= 2) {
+    await safeSend(bot, chatId, formattedNarration)
     await sendVote(bot, chatId, voteData.question, voteData.options, voterIds, storage)
     return
   }
 
   if (groupChat && voterIds.length >= 2 && actions.length >= 2) {
+    await safeSend(bot, chatId, formattedNarration)
     await sendVote(bot, chatId, 'Que hace el grupo?', actions, voterIds, storage)
-    await safeSend(bot, chatId, formatDirectorMessage(clean))
     return
   }
 
   const fallbackActions = voteData.active && voteData.options.length > 0 ? voteData.options : actions
-  await sendWithActions(bot, chatId, formatDirectorMessage(clean), fallbackActions)
+  await sendWithActions(bot, chatId, formattedNarration, fallbackActions)
 }
 
 async function startAdventure(chatId, game, groupChat = false) {
