@@ -288,92 +288,100 @@ function extractCharacterFromReply(reply, fallbackGame) {
 }
 
 async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false) {
-  await bot.sendChatAction(chatId, 'typing')
+  try {
+    await bot.sendChatAction(chatId, 'typing')
 
-  const pendingPlayer = getPendingPlayer(game)
-  const currentStepIndex = SETUP_STEPS.indexOf(game.setupSubStep)
-  if (currentStepIndex === -1) {
-    game.setupSubStep = 'name'
-  }
+    const pendingPlayer = getPendingPlayer(game)
+    const currentStepIndex = SETUP_STEPS.indexOf(game.setupSubStep)
+    if (currentStepIndex === -1) {
+      game.setupSubStep = 'name'
+    }
 
-  if (game.setupSubStep === 'name') game.setupBuffer.name = userText
-  if (game.setupSubStep === 'race') game.setupBuffer.race = userText
-  if (game.setupSubStep === 'class') game.setupBuffer.class = userText
-  if (game.setupSubStep === 'background') game.setupBuffer.background = userText
-  if (game.setupSubStep === 'trait') game.setupBuffer.trait = userText
-  if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText
-  if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
-
-  if (currentStepIndex >= 0 && currentStepIndex < SETUP_STEPS.length - 1) {
-    game.setupSubStep = SETUP_STEPS[currentStepIndex + 1]
-  }
-
-  let reply
-  if (shouldCompleteSetupLocally(game, userText)) {
-    reply = buildReadyCharacterPayload(game)
-  } else if (normalizeUserText(userText).includes('quiero cambiar')) {
-    game.history = []
-    game.setupSubStep = 'name'
-    game.setupBuffer = {}
+    if (game.setupSubStep === 'name') game.setupBuffer.name = userText
+    if (game.setupSubStep === 'race') game.setupBuffer.race = userText
+    if (game.setupSubStep === 'class') game.setupBuffer.class = userText
+    if (game.setupSubStep === 'background') game.setupBuffer.background = userText
+    if (game.setupSubStep === 'trait') game.setupBuffer.trait = userText
+    if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText
     if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
-    try {
-      reply = await callClaude(game, 'El jugador quiere rehacer el personaje desde el principio.', buildSetupPrompt(game))
-    } catch (error) {
-      reply = buildLocalSetupPrompt(game)
-    }
-  } else {
-    try {
-      reply = await callClaude(game, userText, buildSetupPrompt(game))
-    } catch (error) {
-      reply = buildLocalSetupPrompt(game)
-    }
-  }
 
-  if (reply.includes('PERSONAJE_LISTO|')) {
-    const [name, race, playerClass, background, trait, motivation] = extractCharacterFromReply(reply, game)
-    const player = createPlayer(
-      name || 'Heroe',
-      race || 'Humano',
-      playerClass || 'Guerrero',
-      background || 'Aventurero',
-      trait || 'Misterioso',
-      motivation || 'Buscar fortuna',
-      fromUserId,
-      fromUsername,
-    )
+    if (currentStepIndex >= 0 && currentStepIndex < SETUP_STEPS.length - 1) {
+      game.setupSubStep = SETUP_STEPS[currentStepIndex + 1]
+    }
 
-    game.players.push(player)
-    game.setupStep += 1
-    game.setupSubStep = 'name'
-    clearPendingPlayer(game)
-    game.history = []
+    let reply
+    if (shouldCompleteSetupLocally(game, userText)) {
+      reply = buildReadyCharacterPayload(game)
+    } else if (normalizeUserText(userText).includes('quiero cambiar')) {
+      game.history = []
+      game.setupSubStep = 'name'
+      game.setupBuffer = {}
+      if (pendingPlayer) game.setupBuffer.pendingPlayer = pendingPlayer
+      try {
+        reply = await callClaude(game, 'El jugador quiere rehacer el personaje desde el principio.', buildSetupPrompt(game))
+      } catch (error) {
+        console.error('Claude fallo al reiniciar setup:', error)
+        reply = buildLocalSetupPrompt(game)
+      }
+    } else {
+      try {
+        reply = await callClaude(game, userText, buildSetupPrompt(game))
+      } catch (error) {
+        console.error('Claude fallo en setup, usando fallback local:', error)
+        reply = buildLocalSetupPrompt(game)
+      }
+    }
+
+    if (reply.includes('PERSONAJE_LISTO|')) {
+      const [name, race, playerClass, background, trait, motivation] = extractCharacterFromReply(reply, game)
+      const player = createPlayer(
+        name || 'Heroe',
+        race || 'Humano',
+        playerClass || 'Guerrero',
+        background || 'Aventurero',
+        trait || 'Misterioso',
+        motivation || 'Buscar fortuna',
+        fromUserId,
+        fromUsername,
+      )
+
+      game.players.push(player)
+      game.setupStep += 1
+      game.setupSubStep = 'name'
+      clearPendingPlayer(game)
+      game.history = []
+
+      await saveAndCacheGame(chatId, game)
+      await safeSend(bot, chatId, `*${player.name}* se une a la aventura como ${player.race} ${player.class} de nivel 1.`)
+
+      if (game.setupStep >= game.numPlayers) {
+        await startAdventure(chatId, game)
+      } else if (groupChat) {
+        await sendWithActions(
+          bot,
+          chatId,
+          `Personaje ${game.setupStep} de ${game.numPlayers} completado.\n\nEl siguiente jugador puede usar /unirse para crear su personaje.`,
+          ['/unirse'],
+        )
+      } else {
+        await sendSetupPrompt(chatId, `Vamos con el personaje ${game.setupStep + 1} de ${game.numPlayers}.\n\nComo se llama?`, groupChat)
+      }
+
+      return
+    }
 
     await saveAndCacheGame(chatId, game)
-    await safeSend(bot, chatId, `*${player.name}* se une a la aventura como ${player.race} ${player.class} de nivel 1.`)
-
-    if (game.setupStep >= game.numPlayers) {
-      await startAdventure(chatId, game)
-    } else if (groupChat) {
-      await sendWithActions(
-        bot,
-        chatId,
-        `Personaje ${game.setupStep} de ${game.numPlayers} completado.\n\nEl siguiente jugador puede usar /unirse para crear su personaje.`,
-        ['/unirse'],
-      )
+    const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['Si, estoy listo', 'Quiero cambiar algo'] : []
+    const cleanReply = reply.replace('CONFIRMAR_PERSONAJE', '').trim()
+    if (actions.length > 0) {
+      await sendWithActions(bot, chatId, cleanReply, actions)
     } else {
-      await sendSetupPrompt(chatId, `Vamos con el personaje ${game.setupStep + 1} de ${game.numPlayers}.\n\nComo se llama?`, groupChat)
+      await sendSetupPrompt(chatId, cleanReply, groupChat)
     }
-
-    return
-  }
-
-  await saveAndCacheGame(chatId, game)
-  const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['Si, estoy listo', 'Quiero cambiar algo'] : []
-  const cleanReply = reply.replace('CONFIRMAR_PERSONAJE', '').trim()
-  if (actions.length > 0) {
-    await sendWithActions(bot, chatId, cleanReply, actions)
-  } else {
-    await sendSetupPrompt(chatId, cleanReply, groupChat)
+  } catch (error) {
+    console.error('Error en handleSetup:', error)
+    await saveAndCacheGame(chatId, game)
+    await sendSetupPrompt(chatId, buildLocalSetupPrompt(game), groupChat)
   }
 }
 
