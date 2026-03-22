@@ -1,5 +1,5 @@
 // ============================================================
-//  DM AUTOMÁTICO — Bot de Telegram + Anthropic Claude
+//  DM AUTOMÁTICO — Bot de Telegram + Claude + PostgreSQL
 // ============================================================
 
 // ── package.json ─────────────────────────────────────────────
@@ -11,39 +11,148 @@
 //   "dependencies": {
 //     "node-telegram-bot-api": "^0.64.0",
 //     "@anthropic-ai/sdk": "^0.20.0",
-//     "dotenv": "^16.4.5"
+//     "dotenv": "^16.4.5",
+//     "pg": "^8.11.0"
 //   }
 // }
 
 // ── .env ─────────────────────────────────────────────────────
-// TELEGRAM_TOKEN=tu_token_de_botfather
-// ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
+// TELEGRAM_TOKEN=tu_token
+// ANTHROPIC_API_KEY=sk-ant-xxxxxxx
+// DATABASE_URL=postgresql://...
 
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const Anthropic = require('@anthropic-ai/sdk');
+const { Pool } = require('pg');
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
 
-// ── Estado en memoria ─────────────────────────────────────────
-const games = new Map();
+// ── Inicializar base de datos ─────────────────────────────────
+async function initDB() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS games (
+      chat_id BIGINT PRIMARY KEY,
+      phase TEXT DEFAULT 'idle',
+      num_players INT DEFAULT 0,
+      setup_step INT DEFAULT 0,
+      setup_substep TEXT DEFAULT 'num_players',
+      setup_buffer JSONB DEFAULT '{}',
+      history JSONB DEFAULT '[]',
+      current_turn INT DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
 
-function getGame(chatId) {
-  if (!games.has(chatId)) games.set(chatId, createEmptyGame());
-  return games.get(chatId);
+    CREATE TABLE IF NOT EXISTS players (
+      id SERIAL PRIMARY KEY,
+      chat_id BIGINT REFERENCES games(chat_id) ON DELETE CASCADE,
+      name TEXT,
+      race TEXT,
+      class TEXT,
+      background TEXT,
+      trait TEXT,
+      motivation TEXT,
+      hp INT,
+      max_hp INT,
+      ac INT,
+      stats JSONB,
+      inventory JSONB DEFAULT '[]',
+      conditions JSONB DEFAULT '[]'
+    );
+
+    CREATE TABLE IF NOT EXISTS world_memory (
+      id SERIAL PRIMARY KEY,
+      chat_id BIGINT REFERENCES games(chat_id) ON DELETE CASCADE,
+      type TEXT,  -- 'decision' | 'location' | 'npc'
+      title TEXT,
+      description TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+  console.log('✅ Base de datos inicializada');
+}
+
+// ── DB: Cargar partida ────────────────────────────────────────
+async function loadGame(chatId) {
+  const gRes = await pool.query('SELECT * FROM games WHERE chat_id = $1', [chatId]);
+  if (gRes.rows.length === 0) return null;
+  const g = gRes.rows[0];
+
+  const pRes = await pool.query('SELECT * FROM players WHERE chat_id = $1 ORDER BY id', [chatId]);
+  const wRes = await pool.query('SELECT * FROM world_memory WHERE chat_id = $1 ORDER BY created_at DESC LIMIT 30', [chatId]);
+
+  return {
+    phase: g.phase,
+    numPlayers: g.num_players,
+    setupStep: g.setup_step,
+    setupSubStep: g.setup_substep,
+    setupBuffer: g.setup_buffer,
+    history: g.history,
+    currentTurn: g.current_turn,
+    players: pRes.rows.map(p => ({
+      name: p.name, race: p.race, class: p.class,
+      background: p.background, trait: p.trait, motivation: p.motivation,
+      hp: p.hp, maxHp: p.max_hp, ac: p.ac,
+      stats: p.stats, inventory: p.inventory, conditions: p.conditions
+    })),
+    worldMemory: wRes.rows
+  };
+}
+
+// ── DB: Guardar partida ───────────────────────────────────────
+async function saveGame(chatId, game) {
+  await pool.query(`
+    INSERT INTO games (chat_id, phase, num_players, setup_step, setup_substep, setup_buffer, history, current_turn, updated_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+    ON CONFLICT (chat_id) DO UPDATE SET
+      phase=$2, num_players=$3, setup_step=$4, setup_substep=$5,
+      setup_buffer=$6, history=$7, current_turn=$8, updated_at=NOW()
+  `, [chatId, game.phase, game.numPlayers, game.setupStep,
+      game.setupSubStep, JSON.stringify(game.setupBuffer),
+      JSON.stringify(game.history), game.currentTurn]);
+
+  // Borrar y reinsertar jugadores
+  await pool.query('DELETE FROM players WHERE chat_id = $1', [chatId]);
+  for (const p of game.players) {
+    await pool.query(`
+      INSERT INTO players (chat_id,name,race,class,background,trait,motivation,hp,max_hp,ac,stats,inventory,conditions)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    `, [chatId, p.name, p.race, p.class, p.background, p.trait, p.motivation,
+        p.hp, p.maxHp, p.ac, JSON.stringify(p.stats),
+        JSON.stringify(p.inventory), JSON.stringify(p.conditions)]);
+  }
+}
+
+// ── DB: Guardar memoria del mundo ─────────────────────────────
+async function saveMemory(chatId, type, title, description) {
+  await pool.query(
+    'INSERT INTO world_memory (chat_id, type, title, description) VALUES ($1,$2,$3,$4)',
+    [chatId, type, title, description]
+  );
+}
+
+// ── DB: Borrar partida ────────────────────────────────────────
+async function deleteGame(chatId) {
+  await pool.query('DELETE FROM games WHERE chat_id = $1', [chatId]);
+}
+
+// ── Estado en memoria (caché) ─────────────────────────────────
+const cache = new Map();
+
+async function getGame(chatId) {
+  if (cache.has(chatId)) return cache.get(chatId);
+  const game = await loadGame(chatId);
+  if (game) { cache.set(chatId, game); return game; }
+  return createEmptyGame();
 }
 
 function createEmptyGame() {
   return {
-    phase: 'idle',
-    players: [],
-    numPlayers: 0,
-    setupStep: 0,
-    setupSubStep: 'num_players',
-    setupBuffer: {},
-    history: [],
-    currentTurn: 0,
+    phase: 'idle', players: [], numPlayers: 0,
+    setupStep: 0, setupSubStep: 'num_players',
+    setupBuffer: {}, history: [], currentTurn: 0, worldMemory: []
   };
 }
 
@@ -63,18 +172,15 @@ function genStats(cls) {
   const order = pri[cls.toLowerCase()] || [0,1,2,3,4,5];
   const s = {}; keys.forEach((k,i) => s[k] = base[order[i]]); return s;
 }
-
 function genHp(cls, con) {
   const hd = {guerrero:10,mago:6,pícaro:8,clérigo:8,bárbaro:12,bardo:8,druida:8,explorador:10,paladín:10,hechicero:6,brujo:8,monje:8};
-  return (hd[cls.toLowerCase()] || 8) + mod(con);
+  return (hd[cls.toLowerCase()]||8) + mod(con);
 }
-
 function genAc(cls, dex) {
   if (['guerrero','paladín'].includes(cls.toLowerCase())) return 16;
-  if (['clérigo','explorador','bárbaro'].includes(cls.toLowerCase())) return 13 + Math.min(mod(dex), 2);
+  if (['clérigo','explorador','bárbaro'].includes(cls.toLowerCase())) return 13 + Math.min(mod(dex),2);
   return 10 + mod(dex);
 }
-
 function genItems(cls) {
   const it = {
     guerrero:['Espada larga','Escudo','Armadura de placas'],
@@ -92,7 +198,6 @@ function genItems(cls) {
   };
   return it[cls.toLowerCase()] || ['Mochila','Antorcha'];
 }
-
 function createPlayer(name, race, cls, background, trait, motivation) {
   const stats = genStats(cls);
   const maxHp = genHp(cls, stats.con);
@@ -100,10 +205,9 @@ function createPlayer(name, race, cls, background, trait, motivation) {
     hp: maxHp, maxHp, ac: genAc(cls, stats.dex), stats,
     inventory: genItems(cls), conditions: [] };
 }
-
 function formatPlayerCard(p) {
-  const pct = Math.round((p.hp / p.maxHp) * 10);
-  const bar = '█'.repeat(pct) + '░'.repeat(10 - pct);
+  const pct = Math.round((p.hp/p.maxHp)*10);
+  const bar = '█'.repeat(pct) + '░'.repeat(10-pct);
   return `⚔️ *${p.name}* — ${p.race} ${p.class}\n` +
     `❤️ HP: ${p.hp}/${p.maxHp} [${bar}]\n` +
     `🛡️ CA: ${p.ac} | FUE:${p.stats.str} DES:${p.stats.dex} CON:${p.stats.con}\n` +
@@ -120,22 +224,38 @@ function buildSystemPrompt(game) {
     `Rasgo:"${p.trait}" Motivación:"${p.motivation}" Inv:[${p.inventory.join(', ')}]`
   ).join('\n');
 
+  // Construir resumen de memoria del mundo
+  const decisions = game.worldMemory?.filter(m => m.type==='decision').slice(0,5) || [];
+  const locations = game.worldMemory?.filter(m => m.type==='location').slice(0,5) || [];
+  const npcs = game.worldMemory?.filter(m => m.type==='npc').slice(0,5) || [];
+
+  const memoryBlock = [
+    decisions.length ? `DECISIONES CLAVE:\n${decisions.map(m=>`- ${m.title}: ${m.description}`).join('\n')}` : '',
+    locations.length ? `LUGARES VISITADOS:\n${locations.map(m=>`- ${m.title}: ${m.description}`).join('\n')}` : '',
+    npcs.length ? `NPCs CONOCIDOS:\n${npcs.map(m=>`- ${m.title}: ${m.description}`).join('\n')}` : ''
+  ].filter(Boolean).join('\n\n');
+
   return `Eres un experto Director de Juego de rol de fantasía estilo D&D 5e. Diriges una partida por Telegram para ${game.players.length} jugador(es).
 
 PERSONAJES:
 ${pd}
 
+${memoryBlock ? `MEMORIA DEL MUNDO:\n${memoryBlock}` : ''}
+
 INSTRUCCIONES:
 - Narra en español con estilo literario evocador y conciso.
-- Adapta la historia a los rasgos y motivaciones de los personajes.
+- Usa rasgos, motivaciones y memoria del mundo para personalizar la narrativa.
 - Cuando una acción requiera tirada escribe: TIRADA:[tipo]
 - Para actualizar HP: UPDATE_HP:[nombre]:[valor]
 - Para añadir objeto: ADD_ITEM:[nombre]:[objeto]
 - Para quitar objeto: REMOVE_ITEM:[nombre]:[objeto]
-- Usa formato Markdown compatible con Telegram (*negrita*, _cursiva_).
+- Cuando ocurra algo importante guárdalo con:
+    MEMORIA_DECISION:[título]|[descripción corta]
+    MEMORIA_LUGAR:[nombre lugar]|[descripción corta]
+    MEMORIA_NPC:[nombre NPC]|[descripción corta y actitud]
+- Usa formato Markdown de Telegram (*negrita*, _cursiva_).
 - Máximo 3 párrafos por respuesta narrativa.
-- Al final de cada respuesta sugiere 3 acciones posibles con el formato:
-  ACCIONES: acción1 | acción2 | acción3`;
+- Al final sugiere 3 acciones: ACCIONES: acción1 | acción2 | acción3`;
 }
 
 function buildSetupPrompt(game) {
@@ -148,37 +268,33 @@ DATOS RECOGIDOS: ${JSON.stringify(game.setupBuffer)}
 Según el paso:
 - "name": Pide el nombre del personaje de forma épica.
 - "race": Lista 9 razas numeradas con descripción en 3 palabras: Humano, Elfo, Elfo Oscuro, Enano, Halfling, Gnomo, Semiorco, Tiefling, Dragonborn.
-- "class": Lista 12 clases numeradas con descripción en 3 palabras: Guerrero, Mago, Pícaro, Clérigo, Bárbaro, Bardo, Druida, Explorador, Paladín, Hechicero, Brujo, Monje.
+- "class": Lista 12 clases numeradas: Guerrero, Mago, Pícaro, Clérigo, Bárbaro, Bardo, Druida, Explorador, Paladín, Hechicero, Brujo, Monje.
 - "background": Lista 6 trasfondos numerados adaptados a su clase y raza.
-- "trait": Pide un rasgo de personalidad. Da 4 ejemplos cortos.
-- "motivation": Pregunta su motivación en la vida. Da 4 ejemplos.
-- "confirm": Haz un resumen épico del personaje y escribe al final en línea separada: CONFIRMAR_PERSONAJE
+- "trait": Pide rasgo de personalidad con 4 ejemplos cortos.
+- "motivation": Pregunta su motivación con 4 ejemplos.
+- "confirm": Resumen épico del personaje. Escribe al final: CONFIRMAR_PERSONAJE
 
-Cuando el usuario confirme, escribe en una línea: PERSONAJE_LISTO|[nombre]|[raza]|[clase]|[trasfondo]|[rasgo]|[motivación]
-Usa formato Markdown de Telegram. Sé breve y en español.`;
+Cuando confirme escribe: PERSONAJE_LISTO|[nombre]|[raza]|[clase]|[trasfondo]|[rasgo]|[motivación]
+Markdown de Telegram. Breve y en español.`;
 }
 
 // ── Llamada a Claude ──────────────────────────────────────────
 async function callClaude(game, userMsg, sysOverride) {
   const system = sysOverride || buildSystemPrompt(game);
   const messages = [...game.history, { role: 'user', content: userMsg }];
-
   const res = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1000,
-    system,
-    messages
+    max_tokens: 1000, system, messages
   });
-
-  const text = res.content.map(b => b.text || '').join('');
-  game.history.push({ role: 'user', content: userMsg });
-  game.history.push({ role: 'assistant', content: text });
+  const text = res.content.map(b => b.text||'').join('');
+  game.history.push({ role:'user', content: userMsg });
+  game.history.push({ role:'assistant', content: text });
   if (game.history.length > 40) game.history = game.history.slice(-40);
   return text;
 }
 
 // ── Parsear comandos del DM ───────────────────────────────────
-function parseDMCommands(game, text) {
+async function parseDMCommands(chatId, game, text) {
   let clean = text;
   const rolls = [];
 
@@ -190,7 +306,7 @@ function parseDMCommands(game, text) {
   const hpRe = /UPDATE_HP:([^:]+):(\d+)/gi;
   let hm;
   while ((hm = hpRe.exec(text)) !== null) {
-    const p = game.players.find(x => x.name.toLowerCase() === hm[1].trim().toLowerCase());
+    const p = game.players.find(x => x.name.toLowerCase()===hm[1].trim().toLowerCase());
     if (p) p.hp = Math.max(0, Math.min(parseInt(hm[2]), p.maxHp));
   }
   clean = clean.replace(/UPDATE_HP:[^\n]*/gi, '').trim();
@@ -198,7 +314,7 @@ function parseDMCommands(game, text) {
   const addRe = /ADD_ITEM:([^:]+):([^\n]+)/gi;
   let am;
   while ((am = addRe.exec(text)) !== null) {
-    const p = game.players.find(x => x.name.toLowerCase() === am[1].trim().toLowerCase());
+    const p = game.players.find(x => x.name.toLowerCase()===am[1].trim().toLowerCase());
     if (p) p.inventory.push(am[2].trim());
   }
   clean = clean.replace(/ADD_ITEM:[^\n]*/gi, '').trim();
@@ -206,10 +322,27 @@ function parseDMCommands(game, text) {
   const remRe = /REMOVE_ITEM:([^:]+):([^\n]+)/gi;
   let rm;
   while ((rm = remRe.exec(text)) !== null) {
-    const p = game.players.find(x => x.name.toLowerCase() === rm[1].trim().toLowerCase());
-    if (p) { const idx = p.inventory.indexOf(rm[2].trim()); if (idx > -1) p.inventory.splice(idx, 1); }
+    const p = game.players.find(x => x.name.toLowerCase()===rm[1].trim().toLowerCase());
+    if (p) { const idx = p.inventory.indexOf(rm[2].trim()); if (idx>-1) p.inventory.splice(idx,1); }
   }
   clean = clean.replace(/REMOVE_ITEM:[^\n]*/gi, '').trim();
+
+  // Parsear y guardar memoria del mundo
+  const memTypes = [
+    { re: /MEMORIA_DECISION:([^|\n]+)\|([^\n]+)/gi, type: 'decision' },
+    { re: /MEMORIA_LUGAR:([^|\n]+)\|([^\n]+)/gi, type: 'location' },
+    { re: /MEMORIA_NPC:([^|\n]+)\|([^\n]+)/gi, type: 'npc' }
+  ];
+  for (const { re, type } of memTypes) {
+    let mm;
+    while ((mm = re.exec(text)) !== null) {
+      const title = mm[1].trim(), desc = mm[2].trim();
+      await saveMemory(chatId, type, title, desc);
+      if (!game.worldMemory) game.worldMemory = [];
+      game.worldMemory.unshift({ type, title, description: desc });
+    }
+  }
+  clean = clean.replace(/MEMORIA_(DECISION|LUGAR|NPC):[^\n]*/gi, '').trim();
 
   let actions = [];
   const acMatch = clean.match(/ACCIONES:\s*([^\n]+)/i);
@@ -221,19 +354,19 @@ function parseDMCommands(game, text) {
   return { clean, rolls, actions };
 }
 
-// ── Enviar con teclado de acciones ────────────────────────────
+// ── Enviar con teclado ────────────────────────────────────────
 async function sendWithActions(chatId, text, actions = []) {
   const opts = { parse_mode: 'Markdown' };
   if (actions.length > 0) {
-    opts.reply_markup = {
-      keyboard: actions.map(a => [{ text: a }]),
-      resize_keyboard: true,
-      one_time_keyboard: true
-    };
+    opts.reply_markup = { keyboard: actions.map(a => [{ text: a }]), resize_keyboard: true, one_time_keyboard: true };
   } else {
     opts.reply_markup = { remove_keyboard: true };
   }
-  await bot.sendMessage(chatId, text, opts);
+  try { await bot.sendMessage(chatId, text, opts); }
+  catch(e) {
+    // Si falla el Markdown, reintenta sin formato
+    await bot.sendMessage(chatId, text.replace(/[*_`]/g,''), { reply_markup: opts.reply_markup });
+  }
 }
 
 // ── Setup flow ────────────────────────────────────────────────
@@ -242,102 +375,138 @@ const setupSteps = ['name','race','class','background','trait','motivation','con
 async function handleSetup(chatId, game, userText) {
   await bot.sendChatAction(chatId, 'typing');
   let reply;
-  try {
-    reply = await callClaude(game, userText, buildSetupPrompt(game));
-  } catch(e) {
-    await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``);
-    console.error('Claude error (setup):', e);
-    return;
-  }
+  try { reply = await callClaude(game, userText, buildSetupPrompt(game)); }
+  catch(e) { await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``); return; }
 
   if (reply.includes('PERSONAJE_LISTO|')) {
     const raw = reply.split('PERSONAJE_LISTO|')[1];
     const parts = raw.split('|').map(s => s.trim().replace(/[\r\n].*/,'').trim());
-    const [pname, prace, pcls, pbg, ptrait, pmot] = parts;
+    const [pname,prace,pcls,pbg,ptrait,pmot] = parts;
     const player = createPlayer(pname, prace, pcls, pbg||'Aventurero', ptrait||'Misterioso', pmot||'Buscar fortuna');
     game.players.push(player);
     game.setupStep++;
     game.setupSubStep = 'name';
     game.setupBuffer = {};
     game.history = [];
+    await saveGame(chatId, game);
+    cache.set(chatId, game);
     await bot.sendMessage(chatId, `✅ *${pname}* el/la ${prace} ${pcls} se une a la aventura.`, { parse_mode: 'Markdown' });
-    if (game.setupStep >= game.numPlayers) {
-      await startAdventure(chatId, game);
-    } else {
-      await bot.sendMessage(chatId, `Ahora creemos al personaje ${game.setupStep + 1} de ${game.numPlayers}. ¿Cómo se llama?`);
-    }
+    if (game.setupStep >= game.numPlayers) { await startAdventure(chatId, game); }
+    else { await bot.sendMessage(chatId, `Ahora creemos al personaje ${game.setupStep+1} de ${game.numPlayers}. ¿Cómo se llama?`); }
     return;
   }
 
   const idx = setupSteps.indexOf(game.setupSubStep);
-  if (game.setupSubStep === 'name') game.setupBuffer.name = userText;
-  else if (game.setupSubStep === 'race') game.setupBuffer.race = userText;
-  else if (game.setupSubStep === 'class') game.setupBuffer.class = userText;
-  else if (game.setupSubStep === 'background') game.setupBuffer.background = userText;
-  else if (game.setupSubStep === 'trait') game.setupBuffer.trait = userText;
-  else if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText;
-  if (idx < setupSteps.length - 1) game.setupSubStep = setupSteps[idx + 1];
+  if (game.setupSubStep==='name') game.setupBuffer.name = userText;
+  else if (game.setupSubStep==='race') game.setupBuffer.race = userText;
+  else if (game.setupSubStep==='class') game.setupBuffer.class = userText;
+  else if (game.setupSubStep==='background') game.setupBuffer.background = userText;
+  else if (game.setupSubStep==='trait') game.setupBuffer.trait = userText;
+  else if (game.setupSubStep==='motivation') game.setupBuffer.motivation = userText;
+  if (idx < setupSteps.length-1) game.setupSubStep = setupSteps[idx+1];
 
-  const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['¡Sí, estoy listo!', 'Quiero cambiar algo'] : [];
-  const cleanReply = reply.replace('CONFIRMAR_PERSONAJE', '').trim();
+  await saveGame(chatId, game);
+  cache.set(chatId, game);
+
+  const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['¡Sí, estoy listo!','Quiero cambiar algo'] : [];
+  const cleanReply = reply.replace('CONFIRMAR_PERSONAJE','').trim();
   await sendWithActions(chatId, cleanReply, actions);
 }
 
 async function startAdventure(chatId, game) {
   game.phase = 'adventure';
   game.history = [];
+  await saveGame(chatId, game);
+  cache.set(chatId, game);
   await bot.sendChatAction(chatId, 'typing');
-
   const cards = game.players.map(formatPlayerCard).join('\n\n');
   await bot.sendMessage(chatId, `🗡️ *¡La aventura comienza!*\n\n${cards}`, { parse_mode: 'Markdown' });
-
-  const names = game.players.map(p => `${p.name} (${p.race} ${p.class}, motivación: "${p.motivation}")`).join(', ');
+  const names = game.players.map(p=>`${p.name} (${p.race} ${p.class}, motivación:"${p.motivation}")`).join(', ');
   let reply;
-  try {
-    reply = await callClaude(game,
-      `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa que use los trasfondos y motivaciones de cada personaje. Deja la primera decisión en sus manos.`
-    );
-  } catch(e) {
-    await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``);
-    console.error('Claude error (startAdventure):', e);
-    return;
-  }
-
-  const { clean, actions } = parseDMCommands(game, reply);
+  try { reply = await callClaude(game, `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa que use los trasfondos y motivaciones. Deja la primera decisión en sus manos.`); }
+  catch(e) { await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``); return; }
+  const { clean, actions } = await parseDMCommands(chatId, game, reply);
+  await saveGame(chatId, game);
+  cache.set(chatId, game);
   await sendWithActions(chatId, `🎲 *Director de Juego*\n\n${clean}`, actions);
 }
 
 // ── Comandos ──────────────────────────────────────────────────
 bot.onText(/\/start|\/nueva/, async (msg) => {
   const chatId = msg.chat.id;
-  games.set(chatId, createEmptyGame());
-  const game = getGame(chatId);
+  const game = createEmptyGame();
   game.phase = 'setup';
   game.setupSubStep = 'num_players';
+  await deleteGame(chatId);
+  await saveGame(chatId, game);
+  cache.set(chatId, game);
   await sendWithActions(chatId,
     '⚔️ *¡Bienvenido al DM Automático!*\n\n¿Cuántos jugadores participarán? (1-4)',
     ['1 jugador','2 jugadores','3 jugadores','4 jugadores']
   );
 });
 
-bot.onText(/\/estado/, async (msg) => {
+bot.onText(/\/continuar/, async (msg) => {
   const chatId = msg.chat.id;
-  const game = getGame(chatId);
-  if (game.players.length === 0) {
-    await bot.sendMessage(chatId, 'No hay ninguna partida activa. Usa /nueva para comenzar.');
+  const game = await loadGame(chatId);
+  if (!game || game.phase !== 'adventure') {
+    await bot.sendMessage(chatId, 'No hay ninguna partida guardada. Usa /nueva para comenzar.');
     return;
   }
+  cache.set(chatId, game);
+  const cards = game.players.map(formatPlayerCard).join('\n\n');
+  await bot.sendMessage(chatId, `🗡️ *¡Continuando la aventura!*\n\n${cards}`, { parse_mode: 'Markdown' });
+
+  // Resumen de memoria
+  const decisions = game.worldMemory?.filter(m=>m.type==='decision').slice(0,3)||[];
+  const locations = game.worldMemory?.filter(m=>m.type==='location').slice(0,3)||[];
+  const npcs = game.worldMemory?.filter(m=>m.type==='npc').slice(0,3)||[];
+  let memMsg = '📜 *Memoria de la aventura:*\n';
+  if (decisions.length) memMsg += `\n⚡ *Decisiones:* ${decisions.map(m=>m.title).join(', ')}`;
+  if (locations.length) memMsg += `\n🗺️ *Lugares:* ${locations.map(m=>m.title).join(', ')}`;
+  if (npcs.length) memMsg += `\n👤 *NPCs:* ${npcs.map(m=>m.title).join(', ')}`;
+  await bot.sendMessage(chatId, memMsg, { parse_mode: 'Markdown' });
+
+  await bot.sendChatAction(chatId, 'typing');
+  let reply;
+  try { reply = await callClaude(game, 'Retoma la aventura con un breve resumen de lo ocurrido y plantea la situación actual. Deja la siguiente decisión en manos de los jugadores.'); }
+  catch(e) { await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``); return; }
+  const { clean, actions } = await parseDMCommands(chatId, game, reply);
+  await saveGame(chatId, game);
+  cache.set(chatId, game);
+  await sendWithActions(chatId, `🎲 *Director de Juego*\n\n${clean}`, actions);
+});
+
+bot.onText(/\/estado/, async (msg) => {
+  const chatId = msg.chat.id;
+  const game = await getGame(chatId);
+  if (!game || game.players.length===0) { await bot.sendMessage(chatId, 'No hay partida activa. Usa /nueva.'); return; }
   const cards = game.players.map(formatPlayerCard).join('\n\n');
   await bot.sendMessage(chatId, `📋 *Estado de los personajes*\n\n${cards}`, { parse_mode: 'Markdown' });
+});
+
+bot.onText(/\/memoria/, async (msg) => {
+  const chatId = msg.chat.id;
+  const game = await getGame(chatId);
+  if (!game || !game.worldMemory?.length) { await bot.sendMessage(chatId, 'Aún no hay memoria guardada.'); return; }
+  const decisions = game.worldMemory.filter(m=>m.type==='decision').slice(0,5);
+  const locations = game.worldMemory.filter(m=>m.type==='location').slice(0,5);
+  const npcs = game.worldMemory.filter(m=>m.type==='npc').slice(0,5);
+  let msg2 = '📜 *Memoria de la aventura*\n';
+  if (decisions.length) msg2 += `\n⚡ *Decisiones importantes:*\n${decisions.map(m=>`• ${m.title}: _${m.description}_`).join('\n')}`;
+  if (locations.length) msg2 += `\n\n🗺️ *Lugares visitados:*\n${locations.map(m=>`• ${m.title}: _${m.description}_`).join('\n')}`;
+  if (npcs.length) msg2 += `\n\n👤 *NPCs conocidos:*\n${npcs.map(m=>`• ${m.title}: _${m.description}_`).join('\n')}`;
+  await bot.sendMessage(chatId, msg2, { parse_mode: 'Markdown' });
 });
 
 bot.onText(/\/ayuda/, async (msg) => {
   await bot.sendMessage(msg.chat.id,
     `🎲 *Comandos disponibles*\n\n` +
     `/nueva — Iniciar o reiniciar una partida\n` +
-    `/estado — Ver fichas de todos los personajes\n` +
-    `/ayuda — Mostrar esta ayuda\n\n` +
-    `Durante la aventura escribe libremente lo que hace tu personaje.`,
+    `/continuar — Retomar la última partida guardada\n` +
+    `/estado — Ver fichas de personajes\n` +
+    `/memoria — Ver lugares, NPCs y decisiones recordadas\n` +
+    `/ayuda — Mostrar esta ayuda`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -346,58 +515,46 @@ bot.onText(/\/ayuda/, async (msg) => {
 bot.on('message', async (msg) => {
   if (!msg.text || msg.text.startsWith('/')) return;
   const chatId = msg.chat.id;
-  const game = getGame(chatId);
+  const game = await getGame(chatId);
   const text = msg.text.trim();
 
-  if (game.phase === 'idle') {
-    await bot.sendMessage(chatId, 'Usa /nueva para comenzar una partida. ⚔️');
-    return;
-  }
+  if (game.phase==='idle') { await bot.sendMessage(chatId, 'Usa /nueva para comenzar o /continuar para retomar una partida. ⚔️'); return; }
 
-  if (game.phase === 'setup') {
-    if (game.setupSubStep === 'num_players') {
+  if (game.phase==='setup') {
+    if (game.setupSubStep==='num_players') {
       const n = parseInt(text);
-      if (n >= 1 && n <= 4) {
-        game.numPlayers = n;
-        game.setupSubStep = 'name';
+      if (n>=1 && n<=4) {
+        game.numPlayers = n; game.setupSubStep = 'name';
         await bot.sendChatAction(chatId, 'typing');
         let r;
-        try {
-          r = await callClaude(game, 'Pide el nombre del primer personaje de forma épica.', buildSetupPrompt(game));
-        } catch(e) {
-          r = '¿Cómo se llamará tu héroe?';
-          console.error('Claude error (num_players):', e);
-        }
+        try { r = await callClaude(game, 'Pide el nombre del primer personaje de forma épica.', buildSetupPrompt(game)); }
+        catch(e) { r = '¿Cómo se llamará tu héroe?'; }
+        await saveGame(chatId, game); cache.set(chatId, game);
         await bot.sendMessage(chatId, r, { parse_mode: 'Markdown' });
       } else {
         await sendWithActions(chatId, 'Por favor elige entre 1 y 4 jugadores:', ['1 jugador','2 jugadores','3 jugadores','4 jugadores']);
       }
-    } else {
-      await handleSetup(chatId, game, text);
-    }
+    } else { await handleSetup(chatId, game, text); }
     return;
   }
 
-  if (game.phase === 'adventure') {
+  if (game.phase==='adventure') {
     await bot.sendChatAction(chatId, 'typing');
     const sender = msg.from.first_name || 'Aventurero';
-    const userMsg = game.players.length > 1 ? `[${sender}]: ${text}` : text;
+    const userMsg = game.players.length>1 ? `[${sender}]: ${text}` : text;
     let reply;
-    try {
-      reply = await callClaude(game, userMsg);
-    } catch(e) {
-      await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``);
-      console.error('Claude error (adventure):', e);
-      return;
-    }
-
-    const { clean, rolls, actions } = parseDMCommands(game, reply);
+    try { reply = await callClaude(game, userMsg); }
+    catch(e) { await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``); return; }
+    const { clean, rolls, actions } = await parseDMCommands(chatId, game, reply);
     for (const r of rolls) {
-      const crit = r.resultado === 20 ? ' ✨ ¡CRÍTICO!' : r.resultado === 1 ? ' 💀 ¡PIFIA!' : '';
+      const crit = r.resultado===20?' ✨ ¡CRÍTICO!':r.resultado===1?' 💀 ¡PIFIA!':'';
       await bot.sendMessage(chatId, `🎲 Tirada de *${r.tipo}*: *${r.resultado}*/20${crit}`, { parse_mode: 'Markdown' });
     }
+    await saveGame(chatId, game);
+    cache.set(chatId, game);
     await sendWithActions(chatId, `🎲 *Director de Juego*\n\n${clean}`, actions);
   }
 });
 
-console.log('🎲 Bot DM Automático con Claude iniciado...');
+// ── Arranque ──────────────────────────────────────────────────
+initDB().then(() => console.log('🎲 Bot DM Automático con Claude + PostgreSQL iniciado...'));
