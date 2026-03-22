@@ -1,10 +1,5 @@
 // ============================================================
-//  DM AUTOMÁTICO — Bot de Telegram + OpenAI GPT-4o
-//  Estructura del proyecto:
-//    /dm-bot
-//      index.js        ← este archivo
-//      gameState.js    ← gestión de partidas
-//      package.json    ← dependencias
+//  DM AUTOMÁTICO — Bot de Telegram + Anthropic Claude
 // ============================================================
 
 // ── package.json ─────────────────────────────────────────────
@@ -15,57 +10,23 @@
 //   "scripts": { "start": "node index.js" },
 //   "dependencies": {
 //     "node-telegram-bot-api": "^0.64.0",
-//     "openai": "^4.47.0",
+//     "@anthropic-ai/sdk": "^0.20.0",
 //     "dotenv": "^16.4.5"
 //   }
 // }
 
 // ── .env ─────────────────────────────────────────────────────
 // TELEGRAM_TOKEN=tu_token_de_botfather
-// OPENAI_API_KEY=tu_api_key_de_openai
+// ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
 
-// ─────────────────────────────────────────────────────────────
-//  gameState.js  (guarda esto en un archivo separado)
-// ─────────────────────────────────────────────────────────────
-/*
-const games = new Map();
-
-function getGame(chatId) {
-  if (!games.has(chatId)) games.set(chatId, createEmptyGame());
-  return games.get(chatId);
-}
-
-function createEmptyGame() {
-  return {
-    phase: 'idle',       // idle | setup | adventure
-    players: [],
-    numPlayers: 0,
-    setupStep: 0,
-    setupSubStep: 'num_players',
-    setupBuffer: {},
-    history: [],
-    currentTurn: 0,      // índice del jugador cuyo turno es
-  };
-}
-
-function resetGame(chatId) {
-  games.set(chatId, createEmptyGame());
-}
-
-module.exports = { getGame, resetGame };
-*/
-
-// ─────────────────────────────────────────────────────────────
-//  index.js  — archivo principal
-// ─────────────────────────────────────────────────────────────
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// ── Estado en memoria (una partida por chat) ──────────────────
+// ── Estado en memoria ─────────────────────────────────────────
 const games = new Map();
 
 function getGame(chatId) {
@@ -141,7 +102,8 @@ function createPlayer(name, race, cls, background, trait, motivation) {
 }
 
 function formatPlayerCard(p) {
-  const bar = '█'.repeat(Math.round((p.hp/p.maxHp)*10)) + '░'.repeat(10 - Math.round((p.hp/p.maxHp)*10));
+  const pct = Math.round((p.hp / p.maxHp) * 10);
+  const bar = '█'.repeat(pct) + '░'.repeat(10 - pct);
   return `⚔️ *${p.name}* — ${p.race} ${p.class}\n` +
     `❤️ HP: ${p.hp}/${p.maxHp} [${bar}]\n` +
     `🛡️ CA: ${p.ac} | FUE:${p.stats.str} DES:${p.stats.dex} CON:${p.stats.con}\n` +
@@ -196,22 +158,19 @@ Cuando el usuario confirme, escribe en una línea: PERSONAJE_LISTO|[nombre]|[raz
 Usa formato Markdown de Telegram. Sé breve y en español.`;
 }
 
-// ── Llamada a OpenAI ──────────────────────────────────────────
-async function callGPT(game, userMsg, sysOverride) {
+// ── Llamada a Claude ──────────────────────────────────────────
+async function callClaude(game, userMsg, sysOverride) {
   const system = sysOverride || buildSystemPrompt(game);
-  const messages = [
-    { role: 'system', content: system },
-    ...game.history,
-    { role: 'user', content: userMsg }
-  ];
+  const messages = [...game.history, { role: 'user', content: userMsg }];
 
-  const res = await openai.chat.completions.create({
-    model: 'gpt-3.5-turbo',
+  const res = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
     max_tokens: 1000,
+    system,
     messages
   });
 
-  const text = res.choices[0].message.content;
+  const text = res.content.map(b => b.text || '').join('');
   game.history.push({ role: 'user', content: userMsg });
   game.history.push({ role: 'assistant', content: text });
   if (game.history.length > 40) game.history = game.history.slice(-40);
@@ -252,7 +211,6 @@ function parseDMCommands(game, text) {
   }
   clean = clean.replace(/REMOVE_ITEM:[^\n]*/gi, '').trim();
 
-  // Extraer acciones sugeridas
   let actions = [];
   const acMatch = clean.match(/ACCIONES:\s*([^\n]+)/i);
   if (acMatch) {
@@ -263,7 +221,7 @@ function parseDMCommands(game, text) {
   return { clean, rolls, actions };
 }
 
-// ── Enviar mensaje con teclado de acciones ────────────────────
+// ── Enviar con teclado de acciones ────────────────────────────
 async function sendWithActions(chatId, text, actions = []) {
   const opts = { parse_mode: 'Markdown' };
   if (actions.length > 0) {
@@ -284,10 +242,11 @@ const setupSteps = ['name','race','class','background','trait','motivation','con
 async function handleSetup(chatId, game, userText) {
   await bot.sendChatAction(chatId, 'typing');
   let reply;
-  try { reply = await callGPT(game, userText, buildSetupPrompt(game)); }
-  catch(e) {
-    await bot.sendMessage(chatId, `❌ Error OpenAI:\n\`${e.message}\``);
-    console.error('OpenAI error (setup):', e);
+  try {
+    reply = await callClaude(game, userText, buildSetupPrompt(game));
+  } catch(e) {
+    await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``);
+    console.error('Claude error (setup):', e);
     return;
   }
 
@@ -310,7 +269,6 @@ async function handleSetup(chatId, game, userText) {
     return;
   }
 
-  // Avanzar substep
   const idx = setupSteps.indexOf(game.setupSubStep);
   if (game.setupSubStep === 'name') game.setupBuffer.name = userText;
   else if (game.setupSubStep === 'race') game.setupBuffer.race = userText;
@@ -320,9 +278,7 @@ async function handleSetup(chatId, game, userText) {
   else if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText;
   if (idx < setupSteps.length - 1) game.setupSubStep = setupSteps[idx + 1];
 
-  const actions = reply.includes('CONFIRMAR_PERSONAJE')
-    ? ['¡Sí, estoy listo!', 'Quiero cambiar algo']
-    : [];
+  const actions = reply.includes('CONFIRMAR_PERSONAJE') ? ['¡Sí, estoy listo!', 'Quiero cambiar algo'] : [];
   const cleanReply = reply.replace('CONFIRMAR_PERSONAJE', '').trim();
   await sendWithActions(chatId, cleanReply, actions);
 }
@@ -332,23 +288,26 @@ async function startAdventure(chatId, game) {
   game.history = [];
   await bot.sendChatAction(chatId, 'typing');
 
-  // Mostrar fichas de todos los personajes
   const cards = game.players.map(formatPlayerCard).join('\n\n');
   await bot.sendMessage(chatId, `🗡️ *¡La aventura comienza!*\n\n${cards}`, { parse_mode: 'Markdown' });
 
   const names = game.players.map(p => `${p.name} (${p.race} ${p.class}, motivación: "${p.motivation}")`).join(', ');
   let reply;
   try {
-    reply = await callGPT(game,
+    reply = await callClaude(game,
       `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa que use los trasfondos y motivaciones de cada personaje. Deja la primera decisión en sus manos.`
     );
-  } catch(e) { reply = 'El destino os aguarda en la oscuridad... (Error al conectar)'; }
+  } catch(e) {
+    await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``);
+    console.error('Claude error (startAdventure):', e);
+    return;
+  }
 
   const { clean, actions } = parseDMCommands(game, reply);
   await sendWithActions(chatId, `🎲 *Director de Juego*\n\n${clean}`, actions);
 }
 
-// ── Comandos de Telegram ──────────────────────────────────────
+// ── Comandos ──────────────────────────────────────────────────
 bot.onText(/\/start|\/nueva/, async (msg) => {
   const chatId = msg.chat.id;
   games.set(chatId, createEmptyGame());
@@ -378,7 +337,7 @@ bot.onText(/\/ayuda/, async (msg) => {
     `/nueva — Iniciar o reiniciar una partida\n` +
     `/estado — Ver fichas de todos los personajes\n` +
     `/ayuda — Mostrar esta ayuda\n\n` +
-    `Durante la aventura, escribe libremente lo que hace tu personaje.`,
+    `Durante la aventura escribe libremente lo que hace tu personaje.`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -403,8 +362,12 @@ bot.on('message', async (msg) => {
         game.setupSubStep = 'name';
         await bot.sendChatAction(chatId, 'typing');
         let r;
-        try { r = await callGPT(game, 'Pide el nombre del primer personaje de forma épica.', buildSetupPrompt(game)); }
-        catch(e) { r = '¿Cómo se llamará tu héroe?'; }
+        try {
+          r = await callClaude(game, 'Pide el nombre del primer personaje de forma épica.', buildSetupPrompt(game));
+        } catch(e) {
+          r = '¿Cómo se llamará tu héroe?';
+          console.error('Claude error (num_players):', e);
+        }
         await bot.sendMessage(chatId, r, { parse_mode: 'Markdown' });
       } else {
         await sendWithActions(chatId, 'Por favor elige entre 1 y 4 jugadores:', ['1 jugador','2 jugadores','3 jugadores','4 jugadores']);
@@ -417,23 +380,24 @@ bot.on('message', async (msg) => {
 
   if (game.phase === 'adventure') {
     await bot.sendChatAction(chatId, 'typing');
-    // En grupos, identificar al jugador por su nombre de Telegram
     const sender = msg.from.first_name || 'Aventurero';
     const userMsg = game.players.length > 1 ? `[${sender}]: ${text}` : text;
     let reply;
-    try { reply = await callGPT(game, userMsg); }
-    catch(e) { reply = 'El hilo de la historia se pierde en la niebla... (Error de conexión)'; }
+    try {
+      reply = await callClaude(game, userMsg);
+    } catch(e) {
+      await bot.sendMessage(chatId, `❌ Error Claude:\n\`${e.message}\``);
+      console.error('Claude error (adventure):', e);
+      return;
+    }
 
     const { clean, rolls, actions } = parseDMCommands(game, reply);
-
-    // Mostrar tiradas
     for (const r of rolls) {
       const crit = r.resultado === 20 ? ' ✨ ¡CRÍTICO!' : r.resultado === 1 ? ' 💀 ¡PIFIA!' : '';
       await bot.sendMessage(chatId, `🎲 Tirada de *${r.tipo}*: *${r.resultado}*/20${crit}`, { parse_mode: 'Markdown' });
     }
-
     await sendWithActions(chatId, `🎲 *Director de Juego*\n\n${clean}`, actions);
   }
 });
 
-console.log('🎲 Bot DM Automático iniciado...');
+console.log('🎲 Bot DM Automático con Claude iniciado...');
