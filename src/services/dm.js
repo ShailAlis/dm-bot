@@ -77,7 +77,10 @@ INSTRUCCIONES:
 - Narra en espanol con un estilo claro, evocador y facil de seguir.
 - Usa niveles, habilidades, rasgos y contexto del mundo en la narrativa.
 - Prioriza frases comprensibles y decisiones concretas.
-- Cuando una accion requiera tirada: TIRADA:[tipo]
+- Cuando una accion requiera tirada, usa SIEMPRE una linea separada con este formato exacto: TIRADA:[tipo]
+- En [tipo] escribe una descripcion breve y legible, por ejemplo: TIRADA:Percepcion (SAB) o TIRADA:Sigilo (DES)
+- No uses corchetes, parentesis extra, ni texto adicional alrededor del comando. No escribas cosas como "Haz una TIRADA:[...]" ni "[TIRADA:...]"
+- Cada tirada debe ocupar su propia linea y no compartir linea con otros comandos
 - Para actualizar HP: UPDATE_HP:[nombre]:[valor]
 - Para dar XP: XP:[nombre]:[cantidad]
 - Para anadir objeto: ADD_ITEM:[nombre]:[objeto]
@@ -143,16 +146,28 @@ function parseOptionList(rawValue) {
     .filter(Boolean)
 }
 
+function normalizeRollType(rawValue) {
+  return String(rawValue || '')
+    .trim()
+    .replace(/^[\[(]+/, '')
+    .replace(/[\])]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 async function parseDMCommands(chatId, game, text, storage) {
   let clean = text
   const rolls = []
   const levelUps = []
   const voteData = { active: false, question: '', options: [] }
 
-  for (const match of text.matchAll(/TIRADA:(\w+(?:\s\w+)?)/gi)) {
-    rolls.push({ tipo: match[1], resultado: roll(20) })
+  for (const match of text.matchAll(/TIRADA:\s*([^\n]+)/gi)) {
+    const rollType = normalizeRollType(match[1])
+    if (rollType) {
+      rolls.push({ tipo: rollType, resultado: roll(20) })
+    }
   }
-  clean = clean.replace(/TIRADA:[^\s\n]*/gi, '').trim()
+  clean = clean.replace(/TIRADA:\s*[^\n]*/gi, '').trim()
 
   for (const match of text.matchAll(/UPDATE_HP:([^:]+):(\d+)/gi)) {
     const player = findPlayerByName(game, match[1])
