@@ -372,6 +372,8 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
         console.error('Claude fallo al reiniciar setup:', error)
         reply = buildLocalSetupPrompt(game)
       }
+    } else if (game.setupSubStep === 'race' || game.setupSubStep === 'class' || game.setupSubStep === 'confirm') {
+      reply = buildLocalSetupPrompt(game)
     } else {
       try {
         reply = await callClaude(game, userText, buildSetupPrompt(game))
