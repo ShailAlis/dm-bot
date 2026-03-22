@@ -75,6 +75,11 @@ function normalizeUserText(text) {
     .replace(/[.,!?:;]/g, '')
 }
 
+function isPlayerCountSelection(text) {
+  const normalized = normalizeUserText(text)
+  return PLAYER_COUNT_ACTIONS.some((option) => normalizeUserText(option) === normalized)
+}
+
 function getPendingPlayer(game) {
   return game.setupBuffer?.pendingPlayer || null
 }
@@ -293,7 +298,7 @@ async function sendSetupPrompt(chatId, text, groupChat = false) {
 
   const options = groupChat
     ? { reply_markup: { force_reply: true, selective: true } }
-    : {}
+    : { reply_markup: { remove_keyboard: true } }
 
   await safeSend(bot, chatId, text, options)
 }
@@ -391,6 +396,11 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     const currentStepIndex = SETUP_STEPS.indexOf(game.setupSubStep)
     if (currentStepIndex === -1) {
       game.setupSubStep = 'name'
+    }
+
+    if (game.setupSubStep === 'name' && isPlayerCountSelection(userText)) {
+      await sendSetupPrompt(chatId, 'Ese boton era solo para elegir cuantos jugadores habra. Ahora escribe el nombre del personaje.', groupChat)
+      return
     }
 
     if (game.setupSubStep === 'name') game.setupBuffer.name = userText
