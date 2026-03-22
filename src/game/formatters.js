@@ -11,13 +11,15 @@ function makeProgressBar(current, total, size = 10) {
 function formatPlayerCard(player) {
   const nextXp = xpForNextLevel(player.level || 1)
   const proficiency = PROFICIENCY_BONUS[(player.level || 1) - 1]
+  const stats = player.stats || {}
 
   return [
     `*${player.name}*`,
     `${player.race} ${player.class} - Nivel ${player.level || 1}`,
     `HP: ${player.hp}/${player.maxHp} ${makeProgressBar(player.hp, player.maxHp)}`,
     `CA: ${player.ac} - Competencia: +${proficiency}`,
-    `FUE ${player.stats.str} - DES ${player.stats.dex} - CON ${player.stats.con}`,
+    `FUE ${stats.str ?? '-'} - DES ${stats.dex ?? '-'} - CON ${stats.con ?? '-'}`,
+    `INT ${stats.int ?? '-'} - SAB ${stats.wis ?? '-'} - CAR ${stats.cha ?? '-'}`,
     nextXp ? `XP: ${player.xp}/${nextXp}` : `XP: ${player.xp} (maximo)`,
     `Equipo: ${player.inventory.slice(0, 4).join(', ') || 'Sin equipo destacado'}`,
     `Rasgo: ${player.trait}`,

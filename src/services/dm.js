@@ -134,6 +134,15 @@ function findPlayerByName(game, name) {
   return game.players.find((player) => player.name.toLowerCase() === name.trim().toLowerCase())
 }
 
+function parseOptionList(rawValue) {
+  return String(rawValue || '')
+    .split(/\r?\n|\|/)
+    .map((option) => option.trim())
+    .map((option) => option.replace(/^[-*]\s*/, ''))
+    .map((option) => option.replace(/^\d+[.)]\s*/, ''))
+    .filter(Boolean)
+}
+
 async function parseDMCommands(chatId, game, text, storage) {
   let clean = text
   const rolls = []
@@ -209,19 +218,38 @@ async function parseDMCommands(chatId, game, text, storage) {
   }
   clean = clean.replace(/CRONICA:[^\n]*/gi, '').trim()
 
-  const voteMatch = clean.match(/VOTACION:([^|\n]+)\|([^\n]+)/i)
+  const voteMatch = clean.match(/VOTACION:\s*([\s\S]*?)(?=\n[A-Z_]+:|$)/i)
   if (voteMatch) {
-    voteData.active = true
-    voteData.question = voteMatch[1].trim()
-    voteData.options = voteMatch[2].split('|').map((option) => option.trim()).filter(Boolean)
-    clean = clean.replace(/VOTACION:([^|\n]+)\|([^\n]+)/i, '').trim()
+    const voteLines = voteMatch[1]
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    const inlineParts = voteMatch[1].split('|').map((part) => part.trim()).filter(Boolean)
+
+    let question = ''
+    let options = []
+
+    if (inlineParts.length >= 3) {
+      question = inlineParts[0]
+      options = inlineParts.slice(1)
+    } else if (voteLines.length >= 2) {
+      question = voteLines[0].replace(/\|$/, '').trim()
+      options = parseOptionList(voteLines.slice(1).join('\n'))
+    }
+
+    if (question && options.length > 0) {
+      voteData.active = true
+      voteData.question = question
+      voteData.options = options
+    }
+    clean = clean.replace(/VOTACION:\s*([\s\S]*?)(?=\n[A-Z_]+:|$)/i, '').trim()
   }
 
   let actions = []
-  const actionsMatch = clean.match(/ACCIONES:\s*([^\n]+)/i)
+  const actionsMatch = clean.match(/ACCIONES:\s*([\s\S]*?)(?=\n[A-Z_]+:|$)/i)
   if (actionsMatch) {
-    actions = actionsMatch[1].split('|').map((action) => action.trim()).filter(Boolean)
-    clean = clean.replace(/ACCIONES:[^\n]*/i, '').trim()
+    actions = parseOptionList(actionsMatch[1])
+    clean = clean.replace(/ACCIONES:\s*([\s\S]*?)(?=\n[A-Z_]+:|$)/i, '').trim()
   }
 
   return { clean, rolls, actions, levelUps, voteData }
