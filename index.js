@@ -100,8 +100,8 @@ function buildSetupSummary(game) {
     '*Resumen provisional del personaje*',
     '',
     `Nombre: ${draft.name || '-'}`,
-    `Raza: ${draft.race || '-'}`,
-    `Clase: ${draft.class || '-'}`,
+    `Raza: ${resolveRaceValue(draft.race || '-')}`,
+    `Clase: ${resolveClassValue(draft.class || '-')}`,
     `Trasfondo: ${draft.background || '-'}`,
     `Rasgo: ${draft.trait || '-'}`,
     `Motivacion: ${draft.motivation || '-'}`,
@@ -243,6 +243,12 @@ async function sendSetupPrompt(chatId, text, groupChat = false) {
 
 async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackText = 'Como se llamara tu heroe?') {
   await bot.sendChatAction(chatId, 'typing')
+
+  if (game.setupSubStep === 'race' || game.setupSubStep === 'class') {
+    await sendSetupPrompt(chatId, buildLocalSetupPrompt(game) || fallbackText, groupChat)
+    return
+  }
+
   let reply
 
   try {
@@ -341,8 +347,8 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
     }
 
     if (game.setupSubStep === 'name') game.setupBuffer.name = userText
-    if (game.setupSubStep === 'race') game.setupBuffer.race = userText
-    if (game.setupSubStep === 'class') game.setupBuffer.class = userText
+    if (game.setupSubStep === 'race') game.setupBuffer.race = resolveRaceValue(userText)
+    if (game.setupSubStep === 'class') game.setupBuffer.class = resolveClassValue(userText)
     if (game.setupSubStep === 'background') game.setupBuffer.background = userText
     if (game.setupSubStep === 'trait') game.setupBuffer.trait = userText
     if (game.setupSubStep === 'motivation') game.setupBuffer.motivation = userText
