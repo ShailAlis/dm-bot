@@ -583,7 +583,7 @@ async function forceContinueNarration(chatId, game, groupChat = false) {
   try {
     reply = await callClaude(
       game,
-      'La narracion anterior se ha quedado a medias. Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena, y termina con nuevas acciones si corresponde.',
+      'La narracion anterior se ha quedado a medias. Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena. Avanza solo un poco, deja claro que los jugadores siguen teniendo la iniciativa y termina siempre con 2 o 3 decisiones concretas que sus personajes puedan tomar ahora mismo.',
     )
   } catch (error) {
     await sendClaudeError(chatId, error)
