@@ -206,7 +206,7 @@ async function callGPT(game, userMsg, sysOverride) {
   ];
 
   const res = await openai.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-3.5-turbo',
     max_tokens: 1000,
     messages
   });
