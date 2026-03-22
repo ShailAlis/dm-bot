@@ -497,20 +497,6 @@ async function upsertDonation(donation) {
   return result.rows[0]
 }
 
-async function getRecentDonations(limit = 10) {
-  const result = await pool.query(
-    `
-      SELECT provider, status, amount, currency, donor_name, donor_email, message, created_at
-      FROM donations
-      ORDER BY created_at DESC
-      LIMIT $1
-    `,
-    [limit],
-  )
-
-  return result.rows
-}
-
 async function getGame(chatId) {
   if (cache.has(chatId)) return cache.get(chatId)
   const game = await loadGame(chatId)
@@ -549,5 +535,4 @@ module.exports = {
   clearCachedGame,
   createEmptyGame,
   upsertDonation,
-  getRecentDonations,
 }
