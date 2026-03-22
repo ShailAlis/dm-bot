@@ -448,7 +448,7 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
       await safeSend(bot, chatId, `*${player.name}* se une a la aventura como ${player.race} ${player.class} de nivel 1.`)
 
       if (game.setupStep >= game.numPlayers) {
-        await startAdventure(chatId, game)
+        await startAdventure(chatId, game, groupChat)
       } else if (groupChat) {
         await sendWithActions(
           bot,
@@ -505,7 +505,7 @@ async function handleDmReply(chatId, game, reply, groupChat = false) {
   await sendWithActions(bot, chatId, formatDirectorMessage(clean), fallbackActions)
 }
 
-async function startAdventure(chatId, game) {
+async function startAdventure(chatId, game, groupChat = false) {
   try {
     game.phase = 'adventure'
     game.history = []
@@ -533,7 +533,7 @@ async function startAdventure(chatId, game) {
       `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa y deja la primera decision en sus manos.`,
     )
 
-    await handleDmReply(chatId, game, reply, false)
+    await handleDmReply(chatId, game, reply, groupChat)
     await saveAndCacheGame(chatId, game)
   } catch (error) {
     console.error('Error en startAdventure:', error)
