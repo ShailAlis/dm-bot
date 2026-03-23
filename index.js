@@ -40,6 +40,7 @@ const GROUP_TELEGRAM_COMMANDS = [
   { command: 'unirse', description: 'Une un jugador a la partida actual' },
   { command: 'continuar', description: 'Recupera la ultima aventura guardada' },
   { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
+  { command: 'resetvotacion', description: 'Limpia una votacion atascada' },
   { command: 'estado', description: 'Muestra el estado del grupo' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
   { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
@@ -53,6 +54,7 @@ const PRIVATE_TELEGRAM_COMMANDS = [
   { command: 'unirse', description: 'Crea el siguiente personaje de la partida' },
   { command: 'continuar', description: 'Recupera tu ultima aventura guardada' },
   { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
+  { command: 'resetvotacion', description: 'Limpia una votacion atascada' },
   { command: 'estado', description: 'Muestra el estado de los personajes' },
   { command: 'xp', description: 'Consulta la experiencia del grupo' },
   { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
@@ -894,6 +896,24 @@ bot.onText(/\/seguir/, async (msg) => {
   await forceContinueNarration(chatId, game, !isPrivateChat(msg.chat))
 })
 
+bot.onText(/\/resetvotacion/, async (msg) => {
+  const chatId = msg.chat.id
+  const activeVote = await storage.getActiveVote(chatId)
+
+  await storage.clearVote(chatId)
+
+  if (!activeVote) {
+    await safeSend(bot, chatId, 'No habia ninguna votacion guardada, pero he limpiado el estado por si se habia quedado atascado.')
+    return
+  }
+
+  await safeSend(
+    bot,
+    chatId,
+    `He reiniciado la votacion activa y he borrado su estado anterior.\n\nPregunta eliminada: _${activeVote.question || 'Sin titulo'}_`,
+  )
+})
+
 bot.onText(/\/memoria/, async (msg) => {
   const game = await storage.getGame(msg.chat.id)
   if (!game || !game.worldMemory?.length) {
@@ -948,6 +968,7 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/nueva - Empieza una partida y crea tu personaje automaticamente',
         '/continuar - Retoma la ultima partida guardada',
         '/seguir - Fuerza a la IA a continuar una escena cortada',
+        '/resetvotacion - Borra una votacion atascada y limpia su estado',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
@@ -962,6 +983,7 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/unirse - Se apunta el siguiente jugador y crea su personaje',
         '/continuar - Retoma la ultima partida guardada',
         '/seguir - Fuerza a la IA a continuar una escena cortada',
+        '/resetvotacion - Borra una votacion atascada y limpia su estado',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
