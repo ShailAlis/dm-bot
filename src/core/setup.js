@@ -294,6 +294,8 @@ function buildCharacterDataFromSetup(reply, game) {
 module.exports = {
   SETUP_STEPS,
   PLAYER_COUNT_ACTIONS,
+  RACE_OPTIONS,
+  CLASS_OPTIONS,
   normalizeUserText,
   isPlayerCountSelection,
   getPendingPlayer,

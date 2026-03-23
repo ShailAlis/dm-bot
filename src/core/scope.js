@@ -1,3 +1,15 @@
+const crypto = require('crypto')
+
+function toStableChatId(rawId, platform) {
+  const normalized = String(rawId)
+  if (/^-?\d+$/.test(normalized)) return normalized
+
+  const hash = crypto.createHash('sha256').update(`${platform}:${normalized}`).digest('hex').slice(0, 15)
+  const numeric = BigInt(`0x${hash}`)
+  const safe = numeric % 9000000000000000000n
+  return safe.toString()
+}
+
 function normalizeScope(scopeInput, defaultPlatform = 'telegram') {
   if (scopeInput && typeof scopeInput === 'object' && !Array.isArray(scopeInput)) {
     const platform = scopeInput.platform || defaultPlatform
@@ -5,7 +17,7 @@ function normalizeScope(scopeInput, defaultPlatform = 'telegram') {
 
     return {
       id: rawId,
-      chatId: rawId,
+      chatId: toStableChatId(rawId, platform),
       platform,
       type: scopeInput.type || 'chat',
       key: `${platform}:${rawId}`,
@@ -14,7 +26,7 @@ function normalizeScope(scopeInput, defaultPlatform = 'telegram') {
 
   return {
     id: scopeInput,
-    chatId: scopeInput,
+    chatId: toStableChatId(scopeInput, defaultPlatform),
     platform: defaultPlatform,
     type: 'chat',
     key: `${defaultPlatform}:${scopeInput}`,

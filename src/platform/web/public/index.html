@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>DM Bot Web</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <div class="bg-layer bg-layer-a"></div>
+  <div class="bg-layer bg-layer-b"></div>
+  <div class="bg-noise"></div>
+
+  <div class="app-shell">
+    <header class="hero card">
+      <div class="hero-copy">
+        <p class="eyebrow">Web mesa</p>
+        <h1>Una mesa web minima para jugar sin depender solo de bots</h1>
+        <p class="lede">
+          Crea rooms, entra por ID, prepara personajes, revisa estado y cronica, manda acciones y accede a donaciones desde una sola interfaz.
+        </p>
+        <div class="hero-chips" id="api-capabilities"></div>
+      </div>
+
+      <div class="hero-meta">
+        <div class="meta-row">
+          <span class="meta-label">API</span>
+          <span class="status-pill" id="api-status">Pendiente</span>
+        </div>
+        <div class="meta-row">
+          <label class="field-label" for="api-base-input">API base</label>
+          <div class="inline-form">
+            <input id="api-base-input" type="text" placeholder="http://localhost:3000" autocomplete="off">
+            <button class="ghost-button" id="api-base-save" type="button">Guardar</button>
+          </div>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Room activa</span>
+          <div class="room-pill" id="active-room-pill">Ninguna</div>
+        </div>
+        <div class="meta-row">
+          <span class="meta-label">Ultima sincronizacion</span>
+          <div class="muted" id="last-sync">Todavia no hay datos</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="notice card" id="local-file-notice" hidden>
+      <strong>Modo archivo local.</strong>
+      Esta pagina funciona mejor servida por HTTP. Si abres el HTML directamente, configura una API base en el header.
+    </section>
+
+    <main class="workspace">
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Lobby</p>
+            <h2>Crear o entrar en una room</h2>
+          </div>
+          <button class="ghost-button" id="refresh-all-button" type="button">Actualizar</button>
+        </div>
+
+        <div class="grid-two">
+          <form id="create-room-form" class="stacked-form">
+            <h3>Crear room</h3>
+            <label class="field">
+              <span class="field-label">Titulo</span>
+              <input id="room-title-input" type="text" maxlength="120" placeholder="Las sombras de la taberna rota">
+            </label>
+            <label class="field">
+              <span class="field-label">Numero de jugadores</span>
+              <input id="room-players-input" type="number" min="1" max="8" value="4">
+            </label>
+            <button class="primary-button" type="submit">Crear room</button>
+          </form>
+
+          <form id="join-room-form" class="stacked-form">
+            <h3>Cargar room por ID</h3>
+            <label class="field">
+              <span class="field-label">Room ID</span>
+              <input id="join-room-input" type="text" placeholder="9b1d2e6d-...">
+            </label>
+            <div class="button-row">
+              <button class="primary-button" type="submit">Cargar room</button>
+              <button class="ghost-button" id="copy-room-button" type="button">Copiar ID</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="room-summary" id="room-summary">
+          <p class="muted">Crea o carga una room para ver el estado, personajes, memoria y cronica.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Personaje</p>
+            <h2>Crear personaje con selects</h2>
+          </div>
+          <span class="badge" id="character-sync-status">Borrador local</span>
+        </div>
+
+        <form id="character-form" class="stacked-form">
+          <div class="grid-two">
+            <label class="field">
+              <span class="field-label">Nombre</span>
+              <input id="char-name" type="text" maxlength="80" placeholder="Aria">
+            </label>
+            <label class="field">
+              <span class="field-label">Trasfondo</span>
+              <input id="char-background" type="text" maxlength="120" placeholder="Huorfana del puerto">
+            </label>
+          </div>
+
+          <div class="grid-two">
+            <label class="field">
+              <span class="field-label">Raza</span>
+              <select id="char-race"></select>
+            </label>
+            <label class="field">
+              <span class="field-label">Clase</span>
+              <select id="char-class"></select>
+            </label>
+          </div>
+
+          <div class="grid-two">
+            <label class="field">
+              <span class="field-label">Rasgo</span>
+              <textarea id="char-trait" rows="3" maxlength="240" placeholder="Disciplinada y observadora."></textarea>
+            </label>
+            <label class="field">
+              <span class="field-label">Motivacion</span>
+              <textarea id="char-motivation" rows="3" maxlength="240" placeholder="Quiere resolver el misterio del faro."></textarea>
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button class="primary-button" type="submit">Guardar borrador</button>
+            <button class="ghost-button" id="sync-character-button" type="button">Intentar sincronizar</button>
+            <button class="ghost-button" id="load-draft-button" type="button">Recuperar borrador</button>
+          </div>
+        </form>
+
+        <div class="preview" id="character-preview">
+          <p class="muted">Todavia no hay un personaje guardado.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Estado</p>
+            <h2>Grupo, mundo y memoria</h2>
+          </div>
+          <button class="ghost-button" id="reload-state-button" type="button">Refrescar estado</button>
+        </div>
+
+        <div class="triple-grid">
+          <article class="subcard">
+            <h3>Jugadores</h3>
+            <div id="player-list" class="stack"></div>
+          </article>
+
+          <article class="subcard">
+            <h3>Mundo y escena</h3>
+            <div id="world-summary" class="stack"></div>
+          </article>
+
+          <article class="subcard">
+            <h3>Memoria</h3>
+            <div id="memory-list" class="stack"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Narracion</p>
+            <h2>Cronica y ultima escena</h2>
+          </div>
+          <button class="ghost-button" id="reload-chronicle-button" type="button">Refrescar cronica</button>
+        </div>
+        <div id="chronicle-list" class="timeline"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Acciones</p>
+            <h2>Enviar accion y continuar la escena</h2>
+          </div>
+          <div class="button-row">
+            <button class="ghost-button" id="continue-button" type="button">Continuar</button>
+            <button class="ghost-button" id="follow-button" type="button">Seguir</button>
+          </div>
+        </div>
+
+        <form id="action-form" class="stacked-form">
+          <label class="field">
+            <span class="field-label">Accion libre</span>
+            <textarea id="action-input" rows="4" maxlength="600" placeholder="Describir lo que hace el grupo o tu personaje..."></textarea>
+          </label>
+          <div class="button-row">
+            <button class="primary-button" type="submit">Enviar accion</button>
+            <span class="badge" id="action-sync-status">En espera</span>
+          </div>
+        </form>
+        <div id="action-feed" class="stack"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Votacion</p>
+            <h2>Participar si hay una votacion activa</h2>
+          </div>
+          <span class="badge" id="vote-status">Sin votacion</span>
+        </div>
+
+        <div id="vote-panel" class="vote-panel">
+          <p id="vote-question" class="vote-question">Todavia no hay una votacion disponible en esta room.</p>
+          <div id="vote-options" class="vote-options"></div>
+          <div class="button-row">
+            <button class="primary-button" id="vote-submit-button" type="button" disabled>Votar</button>
+            <button class="ghost-button" id="reload-vote-button" type="button">Refrescar votacion</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Donaciones</p>
+            <h2>Acceder a enlaces de apoyo</h2>
+          </div>
+          <button class="ghost-button" id="reload-donations-button" type="button">Refrescar donaciones</button>
+        </div>
+
+        <div id="donation-message" class="donation-message"></div>
+        <div id="donation-links" class="button-row"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <p class="section-kicker">Actividad</p>
+            <h2>Registro local de acciones</h2>
+          </div>
+          <button class="ghost-button" id="clear-activity-button" type="button">Limpiar</button>
+        </div>
+        <div id="activity-feed" class="stack"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -142,6 +142,16 @@ async function initDB() {
       created_at TIMESTAMP DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS game_events (
+      id SERIAL PRIMARY KEY,
+      chat_id BIGINT REFERENCES games(chat_id) ON DELETE CASCADE,
+      scope_key TEXT,
+      platform TEXT DEFAULT 'telegram',
+      event_type TEXT NOT NULL,
+      payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS donations (
       id SERIAL PRIMARY KEY,
       provider TEXT NOT NULL,
@@ -199,6 +209,10 @@ async function initDB() {
     ALTER TABLE world_context ADD COLUMN IF NOT EXISTS extra_context JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE votes ADD COLUMN IF NOT EXISTS scope_key TEXT;
     ALTER TABLE votes ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'telegram';
+    ALTER TABLE game_events ADD COLUMN IF NOT EXISTS scope_key TEXT;
+    ALTER TABLE game_events ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'telegram';
+    ALTER TABLE game_events ADD COLUMN IF NOT EXISTS event_type TEXT;
+    ALTER TABLE game_events ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'::jsonb;
   `)
 
   await pool.query(`
@@ -256,6 +270,14 @@ async function initDB() {
        OR scope_key = ''
        OR platform IS NULL
        OR platform = '';
+
+    UPDATE game_events
+    SET platform = COALESCE(NULLIF(platform, ''), 'telegram'),
+        scope_key = COALESCE(NULLIF(scope_key, ''), CONCAT(COALESCE(NULLIF(platform, ''), 'telegram'), ':', chat_id::text))
+    WHERE scope_key IS NULL
+       OR scope_key = ''
+       OR platform IS NULL
+       OR platform = '';
   `)
 
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS games_scope_key_idx ON games(scope_key)')
@@ -264,6 +286,7 @@ async function initDB() {
   await pool.query('CREATE INDEX IF NOT EXISTS chronicle_scope_key_idx ON chronicle(scope_key)')
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS world_context_scope_key_idx ON world_context(scope_key)')
   await pool.query('CREATE INDEX IF NOT EXISTS votes_scope_key_idx ON votes(scope_key)')
+  await pool.query('CREATE INDEX IF NOT EXISTS game_events_scope_key_idx ON game_events(scope_key)')
 
   await pool.query(`
     UPDATE players
@@ -485,6 +508,57 @@ async function getChronicleEntries(scopeInput) {
   return result.rows
 }
 
+async function addGameEvent(scopeInput, eventType, payload = {}) {
+  const scope = normalizeScope(scopeInput)
+  await pool.query(
+    'INSERT INTO game_events (chat_id, scope_key, platform, event_type, payload) VALUES ($1, $2, $3, $4, $5)',
+    [scope.chatId, scope.key, scope.platform, eventType, JSON.stringify(payload || {})],
+  )
+}
+
+async function getGameEvents(scopeInput, limit = 100) {
+  const scope = normalizeScope(scopeInput)
+  const safeLimit = Number.isInteger(limit) ? Math.max(1, Math.min(limit, 500)) : 100
+  const result = await pool.query(
+    `
+      SELECT id, event_type, payload, created_at
+      FROM game_events
+      WHERE scope_key = $1
+      ORDER BY created_at ASC, id ASC
+      LIMIT $2
+    `,
+    [scope.key, safeLimit],
+  )
+  return result.rows.map((row) => ({
+    id: row.id,
+    type: row.event_type,
+    payload: row.payload || {},
+    createdAt: row.created_at,
+  }))
+}
+
+async function getGameEventsAfter(scopeInput, afterId = 0, limit = 100) {
+  const scope = normalizeScope(scopeInput)
+  const safeAfterId = Number.isInteger(afterId) ? afterId : Number.parseInt(afterId || '0', 10) || 0
+  const safeLimit = Number.isInteger(limit) ? Math.max(1, Math.min(limit, 500)) : 100
+  const result = await pool.query(
+    `
+      SELECT id, event_type, payload, created_at
+      FROM game_events
+      WHERE scope_key = $1 AND id > $2
+      ORDER BY id ASC
+      LIMIT $3
+    `,
+    [scope.key, safeAfterId, safeLimit],
+  )
+  return result.rows.map((row) => ({
+    id: row.id,
+    type: row.event_type,
+    payload: row.payload || {},
+    createdAt: row.created_at,
+  }))
+}
+
 async function saveWorldContext(scopeInput, context) {
   const scope = normalizeScope(scopeInput)
   await pool.query(
@@ -673,6 +747,9 @@ module.exports = {
   saveMemory,
   addChronicleEntry,
   getChronicleEntries,
+  addGameEvent,
+  getGameEvents,
+  getGameEventsAfter,
   saveWorldContext,
   createVote,
   getActiveVote,

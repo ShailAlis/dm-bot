@@ -192,27 +192,7 @@ function startWebhookServer() {
   if (!shouldStartWebhookServer()) return null
 
   const server = http.createServer(async (request, response) => {
-    try {
-      if (request.method === 'GET' && request.url === '/health') {
-        sendJson(response, 200, { ok: true })
-        return
-      }
-
-      if (request.method === 'POST' && request.url === '/webhooks/stripe') {
-        await handleStripeWebhook(request, response)
-        return
-      }
-
-      if (request.method === 'POST' && request.url === '/webhooks/paypal') {
-        await handlePayPalWebhook(request, response)
-        return
-      }
-
-      sendJson(response, 404, { ok: false, error: 'Ruta no encontrada' })
-    } catch (error) {
-      console.error('Error procesando webhook:', error)
-      sendJson(response, 500, { ok: false, error: 'Error interno' })
-    }
+    await handleWebhookRequest(request, response)
   })
 
   const port = getWebhookPort()
@@ -223,6 +203,37 @@ function startWebhookServer() {
   return server
 }
 
+async function handleWebhookRequest(request, response) {
+  try {
+    if (request.method === 'GET' && request.url === '/health') {
+      sendJson(response, 200, { ok: true })
+      return true
+    }
+
+    if (request.method === 'POST' && request.url === '/webhooks/stripe') {
+      await handleStripeWebhook(request, response)
+      return true
+    }
+
+    if (request.method === 'POST' && request.url === '/webhooks/paypal') {
+      await handlePayPalWebhook(request, response)
+      return true
+    }
+
+    return false
+  } catch (error) {
+    console.error('Error procesando webhook:', error)
+    sendJson(response, 500, { ok: false, error: 'Error interno' })
+    return true
+  }
+}
+
+function sendWebhookNotFound(response) {
+  sendJson(response, 404, { ok: false, error: 'Ruta no encontrada' })
+}
+
 module.exports = {
+  handleWebhookRequest,
+  sendWebhookNotFound,
   startWebhookServer,
 }

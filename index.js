@@ -3,8 +3,8 @@ require('dotenv').config()
 const storage = require('./src/services/storage')
 const { startTelegramBot } = require('./src/platform/telegram/bot')
 const { hasDiscordEnv, startDiscordBot } = require('./src/platform/discord/bot')
+const { startWebServer } = require('./src/platform/web/server')
 const { logErrorWithContext } = require('./src/core/errors')
-const { startWebhookServer } = require('./src/services/webhooks')
 
 const REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'DATABASE_URL', 'ANTHROPIC_API_KEY']
 
@@ -31,7 +31,7 @@ async function bootstrap() {
   validateEnv()
   await storage.initDB()
   await startTelegramBot({ storage })
-  startWebhookServer()
+  startWebServer({ storage })
 
   if (hasDiscordEnv()) {
     try {
