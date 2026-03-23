@@ -9,128 +9,86 @@
   <script defer src="./app.js"></script>
 </head>
 <body>
-  <div class="scene-glow scene-glow-a"></div>
-  <div class="scene-glow scene-glow-b"></div>
+  <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite" aria-busy="true">
+    <div class="loading-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <p class="loading-title">Cargando</p>
+      <p class="loading-copy" id="loading-copy">Estamos preparando la siguiente pantalla.</p>
+    </div>
+  </div>
 
   <div class="page-shell">
-    <header class="hero">
-      <div class="hero-copy">
-        <p class="eyebrow">Mesa Web</p>
-        <h1>Una sala persistente para dirigir, jugar y retomar la aventura desde el navegador.</h1>
-        <p class="lede">
-          Crea una room, registra personajes, sigue la escena, vota decisiones de grupo y consulta
-          cronica y memoria sin depender de Telegram o Discord.
-        </p>
-        <div class="hero-actions">
-          <button class="primary-button" id="hero-create-button" type="button">Crear aventura</button>
-          <button class="ghost-button" id="hero-open-button" type="button">Abrir room</button>
+    <section class="screen screen-active" id="screen-home">
+      <div class="home-shell">
+        <div class="home-copy">
+          <p class="eyebrow">DM Bot Web</p>
+          <h1>Una mesa narrativa para empezar una aventura o retomar una que ya existe.</h1>
+          <p class="lede">
+            Crea una nueva room para preparar al grupo desde cero, o entra con un codigo si la aventura ya
+            existe y quieres volver a ella.
+          </p>
         </div>
-        <div class="hero-steps">
-          <article class="step-chip">
-            <span class="step-number">1</span>
-            <div>
-              <strong>Crea la room</strong>
-              <p>Levanta la mesa y define cuantas plazas habra.</p>
-            </div>
-          </article>
-          <article class="step-chip">
-            <span class="step-number">2</span>
-            <div>
-              <strong>Registra personajes</strong>
-              <p>Raza, clase, rasgo y motivacion en un flujo corto.</p>
-            </div>
-          </article>
-          <article class="step-chip">
-            <span class="step-number">3</span>
-            <div>
-              <strong>Juega la escena</strong>
-              <p>Actua, vota y retoma la aventura desde el feed.</p>
-            </div>
-          </article>
-        </div>
-      </div>
 
-      <div class="hero-status card">
-        <div class="status-row">
-          <span class="meta-label">API</span>
-          <span class="status-pill" id="api-status" data-tone="warn">Pendiente</span>
-        </div>
-        <div class="status-row">
-          <span class="meta-label">Room</span>
-          <span class="room-pill" id="room-pill">Ninguna</span>
-        </div>
-        <div class="status-row">
-          <span class="meta-label">Ultima sincronizacion</span>
-          <span class="status-copy" id="last-sync">Sin datos</span>
-        </div>
-        <p class="status-detail" id="status-text">Conecta la API y abre una room para empezar.</p>
-      </div>
-    </header>
-
-    <main class="workspace">
-      <aside class="rail">
-        <section class="card stack">
-          <div class="section-head">
+        <div class="home-cards">
+          <form class="card stack" id="create-room-form">
             <div>
-              <p class="section-kicker">Identidad</p>
-              <h2>Jugador local</h2>
+              <p class="section-kicker">Nueva room</p>
+              <h2>Empezar aventura</h2>
+              <p class="support-copy">Crea la sala y define cuantas plazas habra en la partida.</p>
             </div>
-          </div>
 
-          <label class="field">
-            <span class="field-label">Tu nombre visible</span>
-            <input id="actor-name" type="text" maxlength="60" placeholder="Tu alias o nombre">
-          </label>
-          <button class="ghost-button" id="save-identity-button" type="button">Guardar identidad</button>
-          <p class="helper mono" id="actor-id-label"></p>
-        </section>
-
-        <section class="card stack">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Lobby</p>
-              <h2>Rooms</h2>
-            </div>
-            <button class="ghost-button" id="refresh-button" type="button">Actualizar</button>
-          </div>
-
-          <form id="create-room-form" class="stack">
             <label class="field">
-              <span class="field-label">Titulo</span>
-              <input id="room-title-input" type="text" maxlength="120" placeholder="Las sombras del puente hundido">
+              <span class="field-label">Titulo de la aventura</span>
+              <input id="room-title-input" type="text" maxlength="120" placeholder="Las sombras del faro roto">
             </label>
+
             <label class="field">
               <span class="field-label">Numero de jugadores</span>
               <input id="room-players-input" type="number" min="1" max="6" value="2">
             </label>
+
             <button class="primary-button" type="submit">Crear room</button>
           </form>
-          <div class="microcopy-card">
-            <strong>Consejo</strong>
-            <p>Empieza con 2 o 3 jugadores si vas a probar el flujo por primera vez. La aventura arranca sola cuando el grupo se completa.</p>
-          </div>
 
-          <form id="open-room-form" class="stack">
+          <form class="card stack" id="open-room-form">
+            <div>
+              <p class="section-kicker">Cargar room</p>
+              <h2>Retomar aventura</h2>
+              <p class="support-copy">Si ya tienes el codigo, entra directamente en la sala y recupera el estado actual.</p>
+            </div>
+
             <label class="field">
-              <span class="field-label">Room ID</span>
+              <span class="field-label">Codigo de room</span>
               <input id="room-id-input" type="text" placeholder="Pega aqui el roomId">
             </label>
-            <div class="button-row">
-              <button class="primary-button" type="submit">Abrir room</button>
-              <button class="ghost-button" id="copy-room-button" type="button">Copiar ID</button>
-            </div>
+
+            <button class="primary-button" type="submit">Entrar en la room</button>
           </form>
-        </section>
+        </div>
+      </div>
+    </section>
 
-        <section class="card stack">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Personaje</p>
-              <h2>Alta rapida</h2>
-            </div>
+    <section class="screen" id="screen-character">
+      <div class="view-shell">
+        <header class="view-header card">
+          <div>
+            <p class="eyebrow">Preparacion</p>
+            <h2 id="character-room-title">Nueva room</h2>
+            <p class="support-copy" id="character-room-copy">Crea tu personaje. La aventura no empezara hasta que el grupo este completo.</p>
           </div>
+          <div class="header-meta">
+            <span class="badge" id="character-player-count">0/0 personajes</span>
+            <button class="ghost-button" id="character-back-button" type="button">Volver</button>
+          </div>
+        </header>
 
-          <form id="character-form" class="stack">
+        <div class="character-layout">
+          <form class="card stack" id="character-form">
+            <div>
+              <p class="section-kicker">Tu personaje</p>
+              <h3>Ficha rapida</h3>
+            </div>
+
             <label class="field">
               <span class="field-label">Nombre</span>
               <input id="char-name" type="text" maxlength="80" required placeholder="Aria">
@@ -149,163 +107,126 @@
 
             <label class="field">
               <span class="field-label">Trasfondo</span>
-              <input id="char-background" type="text" maxlength="120" required placeholder="Mensajera del norte">
+              <input id="char-background" type="text" maxlength="120" placeholder="Mensajera del norte">
             </label>
+
             <label class="field">
               <span class="field-label">Rasgo</span>
               <textarea id="char-trait" rows="3" maxlength="180" placeholder="Paciente, incisiva y terca."></textarea>
             </label>
+
             <label class="field">
               <span class="field-label">Motivacion</span>
               <textarea id="char-motivation" rows="3" maxlength="180" placeholder="Quiere descubrir quien saboteo el faro."></textarea>
             </label>
 
-            <button class="primary-button" type="submit">Registrar personaje</button>
+            <button class="primary-button" type="submit">Guardar personaje</button>
           </form>
-        </section>
 
-        <section class="card stack" id="donations-card">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Apoyo</p>
-              <h2>Donaciones</h2>
-            </div>
-          </div>
-          <p class="helper" id="donation-message">Cargando informacion de apoyo.</p>
-          <div class="button-row wrap" id="donation-links"></div>
-        </section>
-      </aside>
-
-      <section class="stage">
-        <section class="card story-card">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Escena</p>
-              <h2 id="story-title">Sin room cargada</h2>
-            </div>
-            <div class="badge-row">
-              <span class="badge" id="phase-badge">Sin fase</span>
-              <span class="badge" id="players-badge">0/0 jugadores</span>
-            </div>
-          </div>
-
-          <div class="story-panel">
-            <div class="scene-summary">
-              <p class="scene-label">Ultima narracion</p>
-              <p class="scene-copy" id="last-narration">Crea o abre una room para empezar a jugar.</p>
-            </div>
-
-            <div class="world-banner" id="world-banner">
-              <div>
-                <p class="scene-label">Mundo activo</p>
-                <h3 id="world-banner-title">Todavia no hay aventura activa</h3>
-              </div>
-              <p class="world-banner-copy" id="world-banner-copy">Cuando el grupo se complete, aqui veras el asentamiento, el gancho y el tono de la escena.</p>
-            </div>
-
-            <div class="actions-strip">
-              <p class="scene-label">Acciones sugeridas</p>
-              <div class="button-row wrap" id="suggested-actions"></div>
-            </div>
-          </div>
-
-          <form id="action-form" class="stack">
-            <label class="field">
-              <span class="field-label">Accion libre</span>
-              <textarea id="action-input" rows="5" maxlength="600" placeholder="Describe exactamente lo que hace tu personaje ahora."></textarea>
-            </label>
-
-            <div class="button-row">
-              <button class="primary-button" type="submit">Enviar accion</button>
-              <button class="ghost-button" id="continue-button" type="button">Continuar</button>
-              <button class="ghost-button" id="follow-button" type="button">Seguir</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="card vote-card hidden" id="vote-card">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Decision grupal</p>
-              <h2>Votacion activa</h2>
-            </div>
-            <button class="ghost-button" id="reset-vote-button" type="button">Resetear</button>
-          </div>
-          <p class="vote-question" id="vote-question"></p>
-          <div class="stack" id="vote-options"></div>
-        </section>
-
-        <section class="card feed-card">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Feed</p>
-              <h2>Actividad reciente</h2>
-            </div>
-          </div>
-          <div class="event-feed" id="event-feed"></div>
-        </section>
-      </section>
-
-      <aside class="rail">
-        <section class="card stack">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Resumen rapido</p>
-              <h2>Panel de sesion</h2>
-            </div>
-          </div>
-          <div class="summary-grid" id="session-summary">
-            <article class="summary-card">
-              <span class="summary-label">Estado</span>
-              <strong id="summary-phase">Sin room</strong>
-            </article>
-            <article class="summary-card">
-              <span class="summary-label">Turno</span>
-              <strong id="summary-turn">-</strong>
-            </article>
-            <article class="summary-card">
-              <span class="summary-label">Memoria</span>
-              <strong id="summary-memory">0 hitos</strong>
-            </article>
-            <article class="summary-card">
-              <span class="summary-label">Feed</span>
-              <strong id="summary-events">0 eventos</strong>
-            </article>
-          </div>
-        </section>
-
-        <section class="card stack">
-          <div class="section-head">
+          <section class="card stack">
             <div>
               <p class="section-kicker">Grupo</p>
-              <h2>Personajes</h2>
+              <h3>Personajes registrados</h3>
+              <p class="support-copy">Cuando se complete el numero de plazas, la aventura pasara automaticamente a la sala.</p>
             </div>
-          </div>
-          <div class="stack" id="player-list"></div>
-        </section>
 
-        <section class="card stack">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Mundo</p>
-              <h2>Contexto</h2>
-            </div>
-          </div>
-          <div class="stack" id="world-summary"></div>
-          <div class="stack" id="memory-list"></div>
-        </section>
+            <div class="stack" id="character-player-list"></div>
+            <div class="notice-card" id="character-status-box"></div>
+          </section>
+        </div>
+      </div>
+    </section>
 
-        <section class="card stack">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Cronica</p>
-              <h2>Entradas</h2>
-            </div>
+    <section class="screen" id="screen-room">
+      <div class="view-shell">
+        <header class="view-header card">
+          <div>
+            <p class="eyebrow">Sala de aventura</p>
+            <h2 id="room-title">Room activa</h2>
+            <p class="support-copy" id="room-subtitle">Aqui puedes seguir la escena, consultar el grupo y retomar la aventura.</p>
           </div>
-          <div class="timeline" id="chronicle-list"></div>
-        </section>
-      </aside>
-    </main>
+          <div class="header-meta">
+            <span class="badge" id="room-phase-badge">Sin fase</span>
+            <button class="ghost-button" id="room-home-button" type="button">Inicio</button>
+          </div>
+        </header>
+
+        <div class="room-layout">
+          <main class="room-main stack">
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Escena actual</p>
+                <h3>Ultima narracion</h3>
+              </div>
+              <div class="scene-box">
+                <p id="last-narration">No hay una escena cargada todavia.</p>
+              </div>
+              <div class="stack">
+                <p class="section-kicker">Acciones sugeridas</p>
+                <div class="action-list" id="suggested-actions"></div>
+              </div>
+            </section>
+
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Tu accion</p>
+                <h3>Intervenir en la escena</h3>
+              </div>
+              <form class="stack" id="action-form">
+                <label class="field">
+                  <span class="field-label">Describe lo que haces</span>
+                  <textarea id="action-input" rows="5" maxlength="600" placeholder="Describe exactamente lo que hace tu personaje ahora."></textarea>
+                </label>
+                <div class="button-row">
+                  <button class="primary-button" type="submit">Enviar accion</button>
+                  <button class="ghost-button" id="continue-button" type="button">Continuar</button>
+                  <button class="ghost-button" id="follow-button" type="button">Seguir</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="card stack hidden" id="vote-card">
+              <div class="vote-head">
+                <div>
+                  <p class="section-kicker">Decision grupal</p>
+                  <h3>Votacion activa</h3>
+                </div>
+                <button class="ghost-button" id="reset-vote-button" type="button">Resetear</button>
+              </div>
+              <p class="vote-question" id="vote-question"></p>
+              <div class="stack" id="vote-options"></div>
+            </section>
+          </main>
+
+          <aside class="room-side stack">
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Grupo</p>
+                <h3>Personajes</h3>
+              </div>
+              <div class="stack" id="room-player-list"></div>
+            </section>
+
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Mundo</p>
+                <h3>Contexto y memoria</h3>
+              </div>
+              <div class="stack" id="world-summary"></div>
+              <div class="stack" id="memory-list"></div>
+            </section>
+
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Cronica</p>
+                <h3>Ultimos hitos</h3>
+              </div>
+              <div class="timeline" id="chronicle-list"></div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </section>
   </div>
 </body>
 </html>
