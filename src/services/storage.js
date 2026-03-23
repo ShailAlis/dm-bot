@@ -124,6 +124,7 @@ async function initDB() {
       encounter TEXT,
       curiosity TEXT,
       extra_rumor TEXT,
+      extra_context JSONB DEFAULT '{}'::jsonb,
       created_at TIMESTAMP DEFAULT NOW()
     );
 
@@ -175,6 +176,7 @@ async function initDB() {
     ALTER TABLE chronicle ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'telegram';
     ALTER TABLE world_context ADD COLUMN IF NOT EXISTS scope_key TEXT;
     ALTER TABLE world_context ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'telegram';
+    ALTER TABLE world_context ADD COLUMN IF NOT EXISTS extra_context JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE votes ADD COLUMN IF NOT EXISTS scope_key TEXT;
     ALTER TABLE votes ADD COLUMN IF NOT EXISTS platform TEXT DEFAULT 'telegram';
   `)
@@ -323,6 +325,7 @@ async function loadWorldContext(scopeInput) {
     encounter: { description: row.encounter },
     curiosity: row.curiosity,
     rumor: row.extra_rumor,
+    extraContext: row.extra_context || {},
   }
 }
 
@@ -466,9 +469,9 @@ async function saveWorldContext(scopeInput, context) {
       INSERT INTO world_context (
         chat_id, scope_key, platform, town_name, town_type, town_population, town_event, town_landmark,
         tavern_name, tavern_wealth, tavern_feature, tavern_rumor, tavern_brew_name, tavern_brew_desc,
-        npc_summary, npc_pocket, npc_secret, plot_hook, encounter, curiosity, extra_rumor
+        npc_summary, npc_pocket, npc_secret, plot_hook, encounter, curiosity, extra_rumor, extra_context
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       ON CONFLICT (scope_key) DO UPDATE SET
         chat_id = $1,
         platform = $3,
@@ -489,7 +492,8 @@ async function saveWorldContext(scopeInput, context) {
         plot_hook = $18,
         encounter = $19,
         curiosity = $20,
-        extra_rumor = $21
+        extra_rumor = $21,
+        extra_context = $22
     `,
     [
       scope.chatId,
@@ -513,6 +517,7 @@ async function saveWorldContext(scopeInput, context) {
       context.encounter.description,
       context.curiosity,
       context.rumor,
+      JSON.stringify(context.extraContext || {}),
     ],
   )
 }

@@ -602,7 +602,15 @@ async function bootstrap() {
   await storage.initDB()
   await registerTelegramCommands()
   if (hasDiscordEnv()) {
-    await startDiscordBot({ storage })
+    try {
+      await startDiscordBot({ storage })
+      console.log('Integracion de Discord activada')
+    } catch (error) {
+      console.error('No se pudo iniciar la integracion de Discord:', error.message)
+      console.error('Telegram seguira funcionando mientras revisas DISCORD_TOKEN y DISCORD_CLIENT_ID')
+    }
+  } else {
+    console.log('Integracion de Discord desactivada (faltan DISCORD_TOKEN y/o DISCORD_CLIENT_ID)')
   }
   console.log('Bot DM Automatico iniciado')
 }
