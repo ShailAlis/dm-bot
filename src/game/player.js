@@ -1,19 +1,21 @@
 const { HIT_DICE, getModifier, normalizeClassKey } = require('./rules')
 
 const STAT_PRIORITY = {
-  guerrero: [0, 2, 1, 4, 3, 5],
-  mago: [3, 1, 2, 4, 0, 5],
-  picaro: [1, 0, 2, 3, 4, 5],
-  clerigo: [4, 2, 1, 0, 3, 5],
-  barbaro: [0, 2, 1, 5, 3, 4],
-  bardo: [5, 1, 2, 3, 4, 0],
-  druida: [4, 2, 1, 3, 0, 5],
-  explorador: [1, 0, 2, 4, 3, 5],
-  paladin: [0, 5, 2, 3, 4, 1],
-  hechicero: [5, 1, 2, 3, 4, 0],
-  brujo: [5, 1, 2, 3, 4, 0],
-  monje: [4, 0, 2, 3, 1, 5],
+  guerrero: ['str', 'con', 'dex', 'wis', 'cha', 'int'],
+  mago: ['int', 'con', 'dex', 'wis', 'cha', 'str'],
+  picaro: ['dex', 'int', 'cha', 'con', 'wis', 'str'],
+  clerigo: ['wis', 'con', 'str', 'cha', 'dex', 'int'],
+  barbaro: ['str', 'con', 'dex', 'wis', 'cha', 'int'],
+  bardo: ['cha', 'dex', 'con', 'wis', 'int', 'str'],
+  druida: ['wis', 'con', 'dex', 'int', 'cha', 'str'],
+  explorador: ['dex', 'wis', 'con', 'str', 'int', 'cha'],
+  paladin: ['str', 'cha', 'con', 'wis', 'dex', 'int'],
+  hechicero: ['cha', 'con', 'dex', 'wis', 'int', 'str'],
+  brujo: ['cha', 'con', 'dex', 'int', 'wis', 'str'],
+  monje: ['dex', 'wis', 'con', 'int', 'cha', 'str'],
 }
+
+const STAT_KEYS = ['str', 'dex', 'con', 'int', 'wis', 'cha']
 
 const STARTING_ITEMS = {
   guerrero: ['Espada larga', 'Escudo', 'Armadura de placas'],
@@ -35,13 +37,16 @@ function roll(sides) {
 }
 
 function generateStats(playerClass) {
-  const base = [15, 14, 13, 12, 10, 8].sort(() => Math.random() - 0.5)
-  const order = STAT_PRIORITY[normalizeClassKey(playerClass)] || [0, 1, 2, 3, 4, 5]
-  const keys = ['str', 'dex', 'con', 'int', 'wis', 'cha']
+  const scores = [16, 15, 13, 11, 10, 8]
+  const preferredOrder = STAT_PRIORITY[normalizeClassKey(playerClass)] || STAT_KEYS
+  const order = [
+    ...preferredOrder.filter((key) => STAT_KEYS.includes(key)),
+    ...STAT_KEYS.filter((key) => !preferredOrder.includes(key)),
+  ].slice(0, STAT_KEYS.length)
   const stats = {}
 
-  keys.forEach((key, index) => {
-    stats[key] = base[order[index]]
+  order.forEach((key, index) => {
+    stats[key] = scores[index]
   })
 
   return stats

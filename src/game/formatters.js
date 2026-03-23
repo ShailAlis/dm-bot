@@ -132,17 +132,19 @@ function formatRoll(roll) {
   let suffix = ''
   if (roll.tiradaBase === 20 || roll.resultado === 20) suffix = ' - critico'
   if (roll.tiradaBase === 1 || roll.resultado === 1) suffix = ' - pifia'
-  const modifierText = roll.modificador
+  const hasModifier = typeof roll.modificador === 'number'
+  const modifierText = hasModifier
     ? ` (${roll.tiradaBase ?? roll.resultado} ${roll.modificador >= 0 ? '+' : '-'} ${Math.abs(roll.modificador)})`
     : ''
-  const actorPrefix = roll.actor ? `${roll.actor} - ` : ''
+  const actorText = roll.actor ? `*${roll.actor}* hace una tirada de ` : 'Tirada de '
+  const reasonText = roll.tipo ? `*${roll.tipo}*` : '*tirada*'
 
   if (roll.dificultad) {
     const outcome = roll.resultado >= roll.dificultad ? ' - superada' : ' - fallida'
-    return `Tirada de *${actorPrefix}${roll.tipo}* contra CD *${roll.dificultad}*: *${roll.resultado}*/20${modifierText}${suffix}${outcome}`
+    return `${actorText}${reasonText} contra CD *${roll.dificultad}*: *${roll.resultado}*/20${modifierText}${suffix}${outcome}`
   }
 
-  return `Tirada de *${actorPrefix}${roll.tipo}*: *${roll.resultado}*/20${modifierText}${suffix}`
+  return `${actorText}${reasonText}: *${roll.resultado}*/20${modifierText}${suffix}`
 }
 
 function formatVoteProgress(username, choice) {
