@@ -1,10 +1,8 @@
 const { Pool } = require('pg')
 const { getScopeCacheKey, normalizeScope } = require('../core/scope')
+const { buildDatabasePoolConfig } = require('../config/database')
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-})
+const pool = new Pool(buildDatabasePoolConfig())
 
 const cache = new Map()
 

@@ -1,4 +1,6 @@
-require('dotenv').config()
+const { loadEnvFiles } = require('./src/config/load-env')
+const { getDatabaseConfigIssues } = require('./src/config/database')
+loadEnvFiles()
 
 const storage = require('./src/services/storage')
 const { startTelegramBot } = require('./src/platform/telegram/bot')
@@ -54,6 +56,11 @@ function validateEnv() {
   const missing = requiredEnvVars.filter((name) => !requireEnv(name))
   if (missing.length > 0) {
     throw new Error(`Faltan variables de entorno requeridas: ${missing.join(', ')}`)
+  }
+
+  const databaseIssues = getDatabaseConfigIssues()
+  if (databaseIssues.length > 0) {
+    throw new Error(databaseIssues.join(' '))
   }
 }
 
