@@ -2,19 +2,46 @@ const Anthropic = require('@anthropic-ai/sdk')
 const EEEG = require('../../eeeg')
 const { PROFICIENCY_BONUS, getLevelFromXP, getNewAbilities, hpGainOnLevelUp, getModifier } = require('../game/rules')
 const { roll } = require('../game/player')
+const { logErrorWithContext } = require('../core/errors')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 function generateWorldContext() {
-  const location = EEEG.generateLocation()
-  return {
-    town: location.town,
-    tavern: location.tavern,
-    npc: EEEG.generateNPC(),
-    hook: EEEG.generatePlotHook(),
-    encounter: EEEG.generateEncounter(),
-    curiosity: EEEG.generateCuriosity(),
-    rumor: EEEG.generateRumor(),
+  try {
+    const location = EEEG.generateLocation()
+    return {
+      town: location?.town || {},
+      tavern: location?.tavern || {},
+      npc: EEEG.generateNPC(),
+      hook: EEEG.generatePlotHook(),
+      encounter: EEEG.generateEncounter(),
+      curiosity: EEEG.generateCuriosity(),
+      rumor: EEEG.generateRumor(),
+      extraContext: {
+        faction: location?.faction || null,
+        mystery: location?.mystery || null,
+        shop: location?.shop || null,
+        district: location?.town?.district || null,
+        powerStructure: location?.town?.powerStructure || '',
+        hiddenConflict: location?.town?.hiddenConflict || '',
+        localLawOrTaboo: location?.town?.localLawOrTaboo || '',
+        worldFrame: location?.town?.worldFrame || '',
+        regionalPressure: location?.town?.regionalPressure || '',
+        identity: location?.town?.identity || '',
+        condition: location?.town?.condition || '',
+        oddity: location?.town?.oddity || '',
+        superstition: location?.town?.superstition || '',
+        prosperity: location?.town?.prosperity || '',
+        industry: location?.town?.industry || '',
+        authority: location?.town?.authority || '',
+        architecture: location?.town?.architecture || '',
+        weather: location?.town?.weather || '',
+        omen: location?.town?.omen || '',
+      },
+    }
+  } catch (error) {
+    logErrorWithContext('Error generando el contexto del mundo.', error)
+    throw error
   }
 }
 
@@ -26,18 +53,43 @@ function buildWorldContextString(context) {
     `Localizacion: ${context.town.name} (${context.town.type}, ~${context.town.population} habitantes)`,
     `Evento actual: ${context.town.event}`,
     `Lugar destacado: ${context.town.landmark}`,
+    context.extraContext?.prosperity ? `Prosperidad: ${context.extraContext.prosperity}` : '',
+    context.extraContext?.industry ? `Industria principal: ${context.extraContext.industry}` : '',
+    context.extraContext?.authority ? `Autoridad visible: ${context.extraContext.authority}` : '',
+    context.extraContext?.powerStructure ? `Estructura de poder: ${context.extraContext.powerStructure}` : '',
+    context.extraContext?.worldFrame ? `Marco regional: ${context.extraContext.worldFrame}` : '',
+    context.extraContext?.regionalPressure ? `Presion regional: ${context.extraContext.regionalPressure}` : '',
+    context.extraContext?.identity ? `Identidad del asentamiento: ${context.extraContext.identity}` : '',
+    context.extraContext?.condition ? `Ambiente cotidiano: ${context.extraContext.condition}` : '',
+    context.extraContext?.oddity ? `Rareza local: ${context.extraContext.oddity}` : '',
+    context.extraContext?.superstition ? `Supersticion local: ${context.extraContext.superstition}` : '',
+    context.extraContext?.localLawOrTaboo ? `Ley o tabu local: ${context.extraContext.localLawOrTaboo}` : '',
+    context.extraContext?.hiddenConflict ? `Conflicto oculto: ${context.extraContext.hiddenConflict}` : '',
+    context.extraContext?.district ? `Distrito notable: ${context.extraContext.district.name} - ${context.extraContext.district.trait}` : '',
+    context.extraContext?.shop ? `Edificio notable: ${context.extraContext.shop.typeName} - ${context.extraContext.shop.specialty}` : '',
     `Taberna: ${context.tavern.name} (${context.tavern.wealth})`,
     `Rasgo de la taberna: ${context.tavern.feature}`,
     `Bebida especial: ${context.tavern.specialBrew.name} - ${context.tavern.specialBrew.desc}`,
     `Rumor de la taberna: ${context.tavern.rumor}`,
+    context.tavern.clientele ? `Clientela tipica: ${context.tavern.clientele}` : '',
+    context.tavern.functionInTown ? `Funcion de la taberna: ${context.tavern.functionInTown}` : '',
+    context.tavern.hook ? `Gancho de taberna: ${context.tavern.hook}` : '',
     `NPC notable: ${context.npc.summary}`,
     `Lleva encima: ${context.npc.pocket}`,
     `Secreto: ${context.npc.secret}`,
+    context.npc.goal ? `Objetivo del NPC: ${context.npc.goal}` : '',
+    context.npc.fear ? `Miedo del NPC: ${context.npc.fear}` : '',
     `Gancho narrativo: ${context.hook.summary}`,
     `Encuentro posible: ${context.encounter.description}`,
+    context.encounter.objective ? `Objetivo del encuentro: ${context.encounter.objective}` : '',
+    context.encounter.complication ? `Complicacion del encuentro: ${context.encounter.complication}` : '',
+    context.extraContext?.faction?.summary ? `Faccion influyente: ${context.extraContext.faction.summary}` : '',
+    context.extraContext?.mystery?.summary ? `Misterio latente: ${context.extraContext.mystery.summary}` : '',
+    context.extraContext?.weather ? `Clima: ${context.extraContext.weather}` : '',
+    context.extraContext?.omen ? `Presagio: ${context.extraContext.omen}` : '',
     `Objeto curioso: ${context.curiosity}`,
     `Rumor adicional: ${context.rumor}`,
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 function buildSystemPrompt(game) {
@@ -83,14 +135,20 @@ INSTRUCCIONES:
 - Narra en espanol con un estilo claro, evocador y facil de seguir.
 - Usa niveles, habilidades, rasgos y contexto del mundo en la narrativa.
 - Prioriza frases comprensibles y decisiones concretas.
-- Narra SOLO lo que los personajes jugadores pueden percibir directamente, inferir de forma razonable o recordar.
-- No reveles planes, identidades, movimientos, conversaciones ni consecuencias fuera de la percepcion actual del grupo.
-- Como Director de Juego SI puedes llevar la cuenta interna de sucesos ocultos, pero debes registrarlos con lineas separadas usando: OCULTO:[hecho breve]
-- Todo lo que vaya en OCULTO es solo para memoria interna del DJ y no debe mostrarse a los jugadores en la narracion visible.
 - Los jugadores solo pueden decidir las acciones, palabras e intenciones de sus propios personajes.
 - Nunca ofrezcas opciones que permitan decidir directamente por NPCs, enemigos, aliados o criaturas del mundo.
 - Los NPCs actuan, responden y toman decisiones solo bajo tu control como Director de Juego.
 - Si un jugador intenta forzar la decision de un NPC, reconduce la escena y describe como reacciona ese NPC por su propia voluntad.
+- Narra SOLO lo que los personajes jugadores pueden percibir directamente, inferir de forma razonable o recordar.
+- No reveles planes, identidades, movimientos, conversaciones ni consecuencias fuera de la percepcion actual del grupo.
+- Como Director de Juego SI puedes llevar la cuenta interna de sucesos ocultos, pero debes registrarlos con lineas separadas usando: OCULTO:[hecho breve]
+- Todo lo que vaya en OCULTO es solo para memoria interna del DJ y no debe mostrarse a los jugadores en la narracion visible.
+- Las decisiones grupales solo deben usarse cuando afecten de forma compartida a todo el grupo o al rumbo comun de la escena.
+- Si usas VOTACION, las opciones deben representar cursos de accion colectivos para todos los personajes jugadores, no acciones individuales ni planes incompatibles entre si dentro del mismo grupo.
+- Cada opcion de VOTACION debe ser una accion concreta, visible y ejecutable ahora mismo. Evita opciones vagas como "investigar mas", "hablar" o "ser cautos" sin decir como.
+- Buenas opciones de grupo: "Atravesar juntos la puerta del sotano con las armas preparadas", "Seguir en grupo al mercader por el callejon", "Esconderse todos tras las cubas y esperar la senal".
+- Cuando uses ACCIONES, cada accion debe ser concreta, breve y directamente jugable por un personaje en este instante.
+- Evita acciones abstractas o ambiguas como "pensar", "hacer algo", "explorar un poco" o "interactuar con el entorno" sin especificar que hace realmente el personaje.
 - Cuando una accion requiera tirada, usa SIEMPRE una linea separada con este formato exacto: TIRADA:[personaje]|[tipo y motivo]|[dificultad]
 - En [personaje] escribe SIEMPRE el nombre exacto del personaje jugador que hace la tirada
 - En [tipo y motivo] escribe una descripcion breve y legible que incluya tanto la habilidad o atributo como el motivo narrativo de la tirada
@@ -106,6 +164,7 @@ INSTRUCCIONES:
 - Memoria: MEMORIA_DECISION:[titulo]|[desc] / MEMORIA_LUGAR:[nombre]|[desc] / MEMORIA_NPC:[nombre]|[desc]
 - Cronica: CRONICA:[parrafo epico de 2-3 frases]
 - Para una decision de grupo importante: VOTACION:[pregunta]|[opcion1]|[opcion2]|[opcion3]
+- La pregunta de VOTACION debe dejar claro que se decide como grupo y que la consecuencia afectara a todos.
 - Usa Markdown sencillo de Telegram (*negrita*, _cursiva_). Maximo 3 parrafos.
 - Al final: ACCIONES: accion1 | accion2 | accion3`
 }
@@ -142,7 +201,14 @@ async function callClaude(game, userMessage, systemOverride) {
     system,
     messages,
   })
-  const text = response.content.map((block) => block.text || '').join('')
+  const text = Array.isArray(response?.content)
+    ? response.content.map((block) => block.text || '').join('').trim()
+    : ''
+
+  if (!text) {
+    throw new Error('Claude no devolvio contenido util.')
+  }
+
   game.lastClaudeMeta = {
     stopReason: response.stop_reason || null,
     text,
@@ -216,12 +282,12 @@ function getStatKeyFromRollType(rollType) {
 }
 
 async function parseDMCommands(chatId, game, text, storage) {
-  let clean = text
+  let clean = String(text || '')
   const rolls = []
   const levelUps = []
   const voteData = { active: false, question: '', options: [] }
 
-  for (const match of text.matchAll(/OCULTO:\s*([^\n]+)/gi)) {
+  for (const match of clean.matchAll(/OCULTO:\s*([^\n]+)/gi)) {
     if (!game.hiddenMemory) game.hiddenMemory = []
     game.hiddenMemory.push(match[1].trim())
   }

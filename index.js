@@ -15,53 +15,45 @@ const {
 } = require('./src/game/formatters')
 const { buildSetupPrompt, callClaude, generateWorldContext, parseDMCommands } = require('./src/services/dm')
 const storage = require('./src/services/storage')
-const { safeSend, sendWithActions, sendVote, sendLevelUpMessage } = require('./src/telegram/messages')
+const { safeSend, sendWithActions, sendVote, sendLevelUpMessage } = require('./src/platform/telegram/messages')
+const {
+  GROUP_TELEGRAM_COMMANDS,
+  PRIVATE_TELEGRAM_COMMANDS,
+} = require('./src/platform/telegram/commands')
+const {
+  SETUP_STEPS,
+  PLAYER_COUNT_ACTIONS,
+  normalizeUserText,
+  isPlayerCountSelection,
+  getPendingPlayer,
+  setPendingPlayer,
+  clearPendingPlayer,
+  isEditingSetup,
+  parseEditableFieldSelection,
+  buildLocalSetupPrompt,
+  getSetupActions,
+  buildReadyCharacterPayload,
+  shouldCompleteSetupLocally,
+  buildCharacterDataFromSetup,
+  resolveRaceValue,
+  resolveClassValue,
+} = require('./src/core/setup')
+const { computeVoteOutcome } = require('./src/core/voting')
+const { createAdventureHandlers } = require('./src/core/adventure')
+const { hasDiscordEnv, startDiscordBot } = require('./src/platform/discord/bot')
+const { logErrorWithContext } = require('./src/core/errors')
 
 const REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'DATABASE_URL', 'ANTHROPIC_API_KEY']
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true })
 
-const SETUP_STEPS = ['name', 'race', 'class', 'background', 'trait', 'motivation', 'confirm']
-const PLAYER_COUNT_ACTIONS = ['1 jugador', '2 jugadores', '3 jugadores', '4 jugadores']
-const YES_WORDS = new Set(['si', 'sí', 's', 'ok', 'vale', 'confirmar', 'listo'])
-const RACE_OPTIONS = ['humano', 'elfo', 'enano', 'mediano', 'draconido', 'gnomo', 'semielfo', 'semiorco', 'tiflin']
-const CLASS_OPTIONS = ['guerrero', 'mago', 'picaro', 'clerigo', 'barbaro', 'bardo', 'druida', 'explorador', 'paladin', 'hechicero', 'brujo', 'monje']
-const EDITABLE_SETUP_FIELDS = [
-  { key: 'name', label: 'Nombre' },
-  { key: 'race', label: 'Raza' },
-  { key: 'class', label: 'Clase' },
-  { key: 'background', label: 'Trasfondo' },
-  { key: 'trait', label: 'Rasgo' },
-  { key: 'motivation', label: 'Motivacion' },
-]
+process.on('unhandledRejection', (reason) => {
+  logErrorWithContext('Promesa no controlada en el proceso principal.', reason)
+})
 
-const GROUP_TELEGRAM_COMMANDS = [
-  { command: 'nueva', description: 'Inicia o reinicia una partida' },
-  { command: 'unirse', description: 'Une un jugador a la partida actual' },
-  { command: 'continuar', description: 'Recupera la ultima aventura guardada' },
-  { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
-  { command: 'resetvotacion', description: 'Limpia una votacion atascada' },
-  { command: 'estado', description: 'Muestra el estado del grupo' },
-  { command: 'xp', description: 'Consulta la experiencia del grupo' },
-  { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
-  { command: 'memoria', description: 'Resume decisiones, lugares y NPCs' },
-  { command: 'cronica', description: 'Exporta la cronica de la aventura' },
-  { command: 'ayuda', description: 'Muestra la ayuda disponible' },
-]
-
-const PRIVATE_TELEGRAM_COMMANDS = [
-  { command: 'nueva', description: 'Inicia o reinicia una partida' },
-  { command: 'unirse', description: 'Crea el siguiente personaje de la partida' },
-  { command: 'continuar', description: 'Recupera tu ultima aventura guardada' },
-  { command: 'seguir', description: 'Fuerza a la IA a continuar una escena' },
-  { command: 'resetvotacion', description: 'Limpia una votacion atascada' },
-  { command: 'estado', description: 'Muestra el estado de los personajes' },
-  { command: 'xp', description: 'Consulta la experiencia del grupo' },
-  { command: 'habilidades', description: 'Lista las habilidades desbloqueadas' },
-  { command: 'memoria', description: 'Resume decisiones, lugares y NPCs' },
-  { command: 'cronica', description: 'Exporta la cronica de la aventura' },
-  { command: 'ayuda', description: 'Muestra la ayuda disponible' },
-]
+process.on('uncaughtExceptionMonitor', (error) => {
+  logErrorWithContext('Excepcion no capturada observada en el proceso principal.', error)
+})
 
 function requireEnv(name) {
   return typeof process.env[name] === 'string' && process.env[name].trim().length > 0
@@ -78,249 +70,6 @@ function isPrivateChat(chat) {
   return chat.type === 'private'
 }
 
-function normalizeUserText(text) {
-  return String(text || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[.,!?:;]/g, '')
-}
-
-function isPlayerCountSelection(text) {
-  const normalized = normalizeUserText(text)
-  return PLAYER_COUNT_ACTIONS.some((option) => normalizeUserText(option) === normalized)
-}
-
-function getPendingPlayer(game) {
-  return game.setupBuffer?.pendingPlayer || null
-}
-
-function setPendingPlayer(game, userId, username) {
-  game.setupBuffer = { ...game.setupBuffer, pendingPlayer: { userId, username } }
-}
-
-function clearPendingPlayer(game) {
-  const nextBuffer = { ...game.setupBuffer }
-  delete nextBuffer.pendingPlayer
-  game.setupBuffer = nextBuffer
-}
-
-function getSetupDraft(game) {
-  const draft = { ...game.setupBuffer }
-  delete draft.pendingPlayer
-  delete draft.editMode
-  return draft
-}
-
-function isEditingSetup(game) {
-  return Boolean(game.setupBuffer?.editMode)
-}
-
-function parseEditableFieldSelection(value) {
-  const normalized = normalizeUserText(value)
-  const numeric = Number.parseInt(normalized, 10)
-
-  if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= EDITABLE_SETUP_FIELDS.length) {
-    return EDITABLE_SETUP_FIELDS[numeric - 1].key
-  }
-
-  const matchedField = EDITABLE_SETUP_FIELDS.find((field) => normalizeUserText(field.label) === normalized)
-  return matchedField?.key || null
-}
-
-function buildSetupSummary(game) {
-  const draft = getSetupDraft(game)
-  return [
-    '*Resumen provisional del personaje*',
-    '',
-    `Nombre: ${draft.name || '-'}`,
-    `Raza: ${resolveRaceValue(draft.race || '-')}`,
-    `Clase: ${resolveClassValue(draft.class || '-')}`,
-    `Trasfondo: ${draft.background || '-'}`,
-    `Rasgo: ${draft.trait || '-'}`,
-    `Motivacion: ${draft.motivation || '-'}`,
-    '',
-    'Si todo esta bien, responde: Si, estoy listo',
-  ].join('\n')
-}
-
-function buildSetupFallback(game) {
-  const step = game.setupSubStep
-
-  if (step === 'race') {
-    return 'Elige una raza para tu personaje: humano, elfo, enano, mediano, draconido, gnomo, semielfo, semiorco o tiflin.'
-  }
-  if (step === 'class') {
-    return 'Elige una clase: guerrero, mago, picaro, clerigo, barbaro, bardo, druida, explorador, paladin, hechicero, brujo o monje.'
-  }
-  if (step === 'background') {
-    return 'Ahora dime el trasfondo de tu personaje.'
-  }
-  if (step === 'trait') {
-    return 'Describe un rasgo de personalidad importante de tu personaje.'
-  }
-  if (step === 'motivation') {
-    return 'Cual es la principal motivacion de tu personaje?'
-  }
-  if (step === 'edit_select') {
-    return 'Elige que parte del personaje quieres cambiar.'
-  }
-  if (step === 'confirm') {
-    return buildSetupSummary(game)
-  }
-
-  return 'Sigue con la creacion del personaje.'
-}
-
-function buildLocalSetupPrompt(game) {
-  const step = game.setupSubStep
-
-  if (step === 'name') {
-    return 'Como se llamara tu personaje?'
-  }
-
-  if (step === 'race') {
-    return [
-      '*Elige una raza*',
-      '',
-      '1. Humano',
-      '2. Elfo',
-      '3. Enano',
-      '4. Mediano',
-      '5. Draconido',
-      '6. Gnomo',
-      '7. Semielfo',
-      '8. Semiorco',
-      '9. Tiflin',
-    ].join('\n')
-  }
-
-  if (step === 'class') {
-    return [
-      '*Elige una clase*',
-      '',
-      '1. Guerrero',
-      '2. Mago',
-      '3. Picaro',
-      '4. Clerigo',
-      '5. Barbaro',
-      '6. Bardo',
-      '7. Druida',
-      '8. Explorador',
-      '9. Paladin',
-      '10. Hechicero',
-      '11. Brujo',
-      '12. Monje',
-    ].join('\n')
-  }
-
-  if (step === 'background') {
-    return 'Cual es el trasfondo de tu personaje?'
-  }
-
-  if (step === 'trait') {
-    return 'Describe un rasgo de personalidad importante.'
-  }
-
-  if (step === 'motivation') {
-    return 'Cual es la motivacion principal de tu personaje?'
-  }
-
-  if (step === 'edit_select') {
-    return [
-      '*Que quieres cambiar?*',
-      '',
-      '1. Nombre',
-      '2. Raza',
-      '3. Clase',
-      '4. Trasfondo',
-      '5. Rasgo',
-      '6. Motivacion',
-    ].join('\n')
-  }
-
-  if (step === 'confirm') {
-    return `${buildSetupSummary(game)}\n\nSi quieres cambiar algo, responde: Quiero cambiar algo`
-  }
-
-  return buildSetupFallback(game)
-}
-
-function getSetupActions(game) {
-  if (game.setupSubStep === 'race') {
-    return [
-      '1. Humano',
-      '2. Elfo',
-      '3. Enano',
-      '4. Mediano',
-      '5. Draconido',
-      '6. Gnomo',
-      '7. Semielfo',
-      '8. Semiorco',
-      '9. Tiflin',
-    ]
-  }
-
-  if (game.setupSubStep === 'class') {
-    return [
-      '1. Guerrero',
-      '2. Mago',
-      '3. Picaro',
-      '4. Clerigo',
-      '5. Barbaro',
-      '6. Bardo',
-      '7. Druida',
-      '8. Explorador',
-      '9. Paladin',
-      '10. Hechicero',
-      '11. Brujo',
-      '12. Monje',
-    ]
-  }
-
-  if (game.setupSubStep === 'confirm') {
-    return ['Si, estoy listo', 'Quiero cambiar algo']
-  }
-
-  if (game.setupSubStep === 'edit_select') {
-    return EDITABLE_SETUP_FIELDS.map((field, index) => `${index + 1}. ${field.label}`)
-  }
-
-  return []
-}
-
-function buildReadyCharacterPayload(game) {
-  const draft = getSetupDraft(game)
-  return `PERSONAJE_LISTO|${draft.name || 'Heroe'}|${resolveRaceValue(draft.race) || 'humano'}|${resolveClassValue(draft.class) || 'guerrero'}|${draft.background || 'Aventurero'}|${draft.trait || 'Misterioso'}|${draft.motivation || 'Buscar fortuna'}`
-}
-
-function shouldCompleteSetupLocally(game, userText) {
-  if (game.setupSubStep !== 'confirm') return false
-
-  const normalized = normalizeUserText(userText)
-  return (
-    YES_WORDS.has(normalized) ||
-    normalized === 'si estoy listo' ||
-    normalized === 'sí estoy listo' ||
-    (normalized.startsWith('si ') && normalized.includes('listo')) ||
-    (normalized.startsWith('sí ') && normalized.includes('listo'))
-  )
-}
-
-function getEligibleVoterIds(players) {
-  const unique = new Set()
-  for (const player of players) {
-    if (player.telegramUserId) unique.add(player.telegramUserId)
-  }
-  return [...unique]
-}
-
-function pickRandomItem(items) {
-  if (!items || items.length === 0) return null
-  return items[Math.floor(Math.random() * items.length)]
-}
-
 async function saveAndCacheGame(chatId, game) {
   await storage.saveGame(chatId, game)
   storage.setCachedGame(chatId, game)
@@ -335,6 +84,32 @@ async function registerTelegramCommands() {
 async function sendClaudeError(chatId, error) {
   await safeSend(bot, chatId, `Error con Claude:\n\`${error.message}\``)
 }
+
+const {
+  handleDmReply,
+  startAdventure,
+  continueAdventure,
+  forceContinueNarration,
+} = createAdventureHandlers({
+  storage,
+  parseDMCommands,
+  generateWorldContext,
+  callClaude,
+  clearPendingPlayer,
+  saveGame: saveAndCacheGame,
+  saveWorldContext: (chatId, context) => storage.saveWorldContext(chatId, context),
+  sendTyping: (chatId) => bot.sendChatAction(chatId, 'typing'),
+  sendMessage: (chatId, text) => safeSend(bot, chatId, text),
+  sendActions: (chatId, text, actions) => sendWithActions(bot, chatId, text, actions),
+  sendVote: (chatId, question, options, voterIds) => sendVote(bot, chatId, question, options, voterIds, storage),
+  sendLevelUp: (chatId, levelUp) => sendLevelUpMessage(bot, chatId, levelUp),
+  sendClaudeError,
+  formatPartyStatus,
+  formatMemoryHighlights,
+  formatDirectorMessage,
+  formatRoll,
+  getPlayerVoterId: (player) => player.telegramUserId,
+})
 
 async function sendSetupPrompt(chatId, text, groupChat = false, replyToMessageId = null) {
   const game = await storage.getGame(chatId)
@@ -358,83 +133,39 @@ async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackT
 }
 
 async function beginNewGame(msg) {
-  const chatId = msg.chat.id
-  const game = storage.createEmptyGame()
+  try {
+    const chatId = msg.chat.id
+    const game = storage.createEmptyGame()
 
-  game.phase = 'setup'
-  game.history = []
-  game.setupSubStep = 'num_players'
+    game.phase = 'setup'
+    game.history = []
+    game.setupSubStep = 'num_players'
 
-  await storage.resetGame(chatId)
-  storage.clearCachedGame(chatId)
+    await storage.resetGame(chatId)
+    storage.clearCachedGame(chatId)
 
-  await saveAndCacheGame(chatId, game)
+    await saveAndCacheGame(chatId, game)
 
-  if (isPrivateChat(msg.chat)) {
+    if (isPrivateChat(msg.chat)) {
+      await sendWithActions(
+        bot,
+        chatId,
+        '*Nueva partida creada*\n\nElige cuantos personajes quieres crear en esta partida.',
+        PLAYER_COUNT_ACTIONS,
+      )
+      return
+    }
+
     await sendWithActions(
       bot,
       chatId,
-      '*Nueva partida creada*\n\nElige cuantos personajes quieres crear en esta partida.',
+      '*Nueva partida creada*\n\nElige cuantos jugadores participaran. Despues, quien haya lanzado /nueva empezara con el primer personaje y el resto podra usar /unirse.',
       PLAYER_COUNT_ACTIONS,
     )
-    return
+  } catch (error) {
+    logErrorWithContext('Error iniciando una nueva partida en Telegram.', error, { chatId: msg?.chat?.id })
+    await safeSend(bot, msg.chat.id, 'No se pudo crear la nueva partida. Intentalo de nuevo en unos segundos.')
   }
-
-  await sendWithActions(
-    bot,
-    chatId,
-    '*Nueva partida creada*\n\nElige cuantos jugadores participaran. Despues, quien haya lanzado /nueva empezara con el primer personaje y el resto podra usar /unirse.',
-    PLAYER_COUNT_ACTIONS,
-  )
-}
-
-function extractCharacterFromReply(reply, fallbackGame) {
-  const rawCharacter = reply.split('PERSONAJE_LISTO|')[1] || buildReadyCharacterPayload(fallbackGame).split('PERSONAJE_LISTO|')[1]
-  const parts = rawCharacter
-    .split('|')
-    .map((part) => part.trim().replace(/[\r\n].*/, '').trim())
-
-  while (parts.length < 6) parts.push('')
-  return parts
-}
-
-function buildCharacterDataFromSetup(reply, game) {
-  const draft = getSetupDraft(game)
-  const [nameFromReply, raceFromReply, classFromReply, backgroundFromReply, traitFromReply, motivationFromReply] =
-    extractCharacterFromReply(reply, game)
-
-  return {
-    name: draft.name || nameFromReply || 'Heroe',
-    race: resolveRaceValue(draft.race || raceFromReply || 'humano'),
-    playerClass: resolveClassValue(draft.class || classFromReply || 'guerrero'),
-    background: draft.background || backgroundFromReply || 'Aventurero',
-    trait: draft.trait || traitFromReply || 'Misterioso',
-    motivation: draft.motivation || motivationFromReply || 'Buscar fortuna',
-  }
-}
-
-function resolveIndexedOption(value, options) {
-  const normalized = normalizeUserText(value)
-  const numeric = Number.parseInt(normalized, 10)
-
-  if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= options.length) {
-    return options[numeric - 1]
-  }
-
-  const matchedOption = options.find((option) => normalizeUserText(option) === normalized)
-  return matchedOption || value
-}
-
-function stripLeadingIndex(value) {
-  return String(value || '').replace(/^\s*\d+\.\s*/, '').trim()
-}
-
-function resolveRaceValue(value) {
-  return resolveIndexedOption(stripLeadingIndex(value), RACE_OPTIONS)
-}
-
-function resolveClassValue(value) {
-  return resolveIndexedOption(stripLeadingIndex(value), CLASS_OPTIONS)
 }
 
 async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false, replyToMessageId = null) {
@@ -555,170 +286,6 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
   }
 }
 
-function findLastAssistantMessage(game) {
-  const history = Array.isArray(game.history) ? [...game.history].reverse() : []
-  return history.find((entry) => entry.role === 'assistant')?.content || ''
-}
-
-function isIncompleteChoiceBlock(reply, actions, voteData) {
-  const text = String(reply || '')
-
-  if (/ACCIONES:\s*$/i.test(text) || /VOTACION:\s*$/i.test(text)) return true
-  if (/ACCIONES:/i.test(text) && actions.length < 2) return true
-  if (/VOTACION:/i.test(text) && (!voteData.active || voteData.options.length < 2)) return true
-
-  return false
-}
-
-async function requestContinuationForCutReply(chatId, game) {
-  const lastAssistant = findLastAssistantMessage(game)
-  const excerpt = lastAssistant.slice(-500)
-
-  return callClaude(
-    game,
-    [
-      'Tu ultima respuesta se ha cortado o ha quedado incompleta justo al final.',
-      'Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena.',
-      'Si estabas empezando a ofrecer opciones, termínalas ahora.',
-      'Debes acabar SIEMPRE con una linea valida de ACCIONES: ... o VOTACION: ... con al menos 2 opciones.',
-      excerpt ? `ULTIMO FRAGMENTO DEL DJ:\n${excerpt}` : '',
-    ].filter(Boolean).join('\n\n'),
-  )
-}
-
-async function handleDmReply(chatId, game, reply, groupChat = false, recoveryDepth = 0) {
-  const { clean, rolls, actions, levelUps, voteData } = await parseDMCommands(chatId, game, reply, storage)
-  const stopReason = game.lastClaudeMeta?.stopReason || null
-  const wasCut = stopReason === 'max_tokens' || isIncompleteChoiceBlock(reply, actions, voteData)
-
-  if (wasCut && recoveryDepth < 2) {
-    try {
-      const recoveredReply = await requestContinuationForCutReply(chatId, game)
-      return handleDmReply(chatId, game, recoveredReply, groupChat, recoveryDepth + 1)
-    } catch (error) {
-      console.error('No se pudo recuperar una respuesta cortada:', error)
-      await safeSend(bot, chatId, 'La narracion se ha cortado antes de las opciones. Usa /seguir para forzar la continuacion de la escena.')
-    }
-  }
-
-  const formattedNarration = formatDirectorMessage(clean)
-
-  for (const currentRoll of rolls) {
-    await safeSend(bot, chatId, formatRoll(currentRoll))
-  }
-
-  for (const levelUp of levelUps) {
-    await sendLevelUpMessage(bot, chatId, levelUp)
-  }
-
-  const voterIds = getEligibleVoterIds(game.players)
-  if (voteData.active && voterIds.length >= 2) {
-    await safeSend(bot, chatId, formattedNarration)
-    await sendVote(bot, chatId, voteData.question, voteData.options, voterIds, storage)
-    return
-  }
-
-  if (groupChat && voterIds.length >= 2 && actions.length >= 2) {
-    await safeSend(bot, chatId, formattedNarration)
-    await sendVote(bot, chatId, 'Que hace el grupo?', actions, voterIds, storage)
-    return
-  }
-
-  const fallbackActions = voteData.active && voteData.options.length > 0 ? voteData.options : actions
-  if (fallbackActions.length > 0) {
-    await sendWithActions(bot, chatId, formattedNarration, fallbackActions)
-    return
-  }
-
-  const suffix = wasCut
-    ? '\n\n_La respuesta llego incompleta. Usa /seguir para pedir al DJ que termine la escena con opciones._'
-    : '\n\n_Si la escena necesita mas impulso, usa /seguir o escribe la accion de tu personaje._'
-  await safeSend(bot, chatId, `${formattedNarration}${suffix}`)
-}
-
-async function startAdventure(chatId, game, groupChat = false) {
-  try {
-    game.phase = 'adventure'
-    game.history = []
-    clearPendingPlayer(game)
-
-    try {
-      game.worldContext = generateWorldContext()
-      await storage.saveWorldContext(chatId, game.worldContext)
-    } catch (error) {
-      console.error('No se pudo generar o guardar el contexto del mundo:', error)
-      game.worldContext = null
-    }
-
-    await saveAndCacheGame(chatId, game)
-
-    await bot.sendChatAction(chatId, 'typing')
-    await safeSend(bot, chatId, `*La aventura comienza*\n\n${formatPartyStatus(game.players)}`)
-
-    const names = game.players
-      .map((player) => `${player.name} (${player.race} ${player.class}, motivacion: "${player.motivation}")`)
-      .join(', ')
-
-    const reply = await callClaude(
-      game,
-      `Comienza la aventura para: ${names}. Crea una escena de apertura misteriosa y deja la primera decision en sus manos.`,
-    )
-
-    await handleDmReply(chatId, game, reply, groupChat)
-    await saveAndCacheGame(chatId, game)
-  } catch (error) {
-    console.error('Error en startAdventure:', error)
-    await safeSend(bot, chatId, 'La aventura ha comenzado, pero hubo un problema al preparar la primera escena. Usa /continuar para seguir.')
-    await saveAndCacheGame(chatId, game)
-  }
-}
-
-async function continueAdventure(chatId, game, groupChat = false) {
-  await safeSend(bot, chatId, `*Continuando la aventura*\n\n${formatPartyStatus(game.players)}`)
-
-  if (game.worldMemory?.length) {
-    await safeSend(bot, chatId, formatMemoryHighlights(game.worldMemory))
-  }
-
-  await bot.sendChatAction(chatId, 'typing')
-  let reply
-  try {
-    reply = await callClaude(game, 'Retoma la aventura con un breve resumen de lo ocurrido y plantea la situacion actual.')
-  } catch (error) {
-    await sendClaudeError(chatId, error)
-    return
-  }
-
-  await handleDmReply(chatId, game, reply, groupChat)
-  await saveAndCacheGame(chatId, game)
-}
-
-async function forceContinueNarration(chatId, game, groupChat = false) {
-  await bot.sendChatAction(chatId, 'typing')
-  const lastAssistant = findLastAssistantMessage(game)
-  const excerpt = lastAssistant.slice(-500)
-
-  let reply
-  try {
-    reply = await callClaude(
-      game,
-      [
-        'La narracion anterior se ha quedado a medias o la respuesta del DJ se ha cortado antes de terminar.',
-        'Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena.',
-        'Si estabas en mitad de una frase, retomala con naturalidad.',
-        'Avanza solo un poco, deja claro que los jugadores siguen teniendo la iniciativa y termina siempre con 2 o 3 decisiones concretas que sus personajes puedan tomar ahora mismo.',
-        excerpt ? `ULTIMO FRAGMENTO DEL DJ:\n${excerpt}` : '',
-      ].filter(Boolean).join('\n\n'),
-    )
-  } catch (error) {
-    await sendClaudeError(chatId, error)
-    return
-  }
-
-  await handleDmReply(chatId, game, reply, groupChat)
-  await saveAndCacheGame(chatId, game)
-}
-
 bot.on('callback_query', async (query) => {
   try {
     const chatId = query.message.chat.id
@@ -757,18 +324,7 @@ bot.on('callback_query', async (query) => {
 
     await storage.clearVote(chatId)
 
-    const counts = {}
-    Object.values(result.vote.votes).forEach((currentChoice) => {
-      counts[currentChoice] = (counts[currentChoice] || 0) + 1
-    })
-
-    const sortedCounts = Object.entries(counts).sort((left, right) => right[1] - left[1])
-    const topVotes = sortedCounts[0][1]
-    const tiedWinners = sortedCounts.filter(([, totalVotes]) => totalVotes === topVotes).map(([option]) => option)
-    const winner = pickRandomItem(tiedWinners)
-    const summary = Object.entries(counts)
-      .map(([option, totalVotes]) => `${option}: ${totalVotes} voto(s)`)
-      .join(', ')
+    const { winner, summary } = computeVoteOutcome(result.vote.votes)
 
     await safeSend(bot, chatId, formatVoteResult(summary, winner))
     await bot.sendChatAction(chatId, 'typing')
@@ -896,24 +452,6 @@ bot.onText(/\/seguir/, async (msg) => {
   await forceContinueNarration(chatId, game, !isPrivateChat(msg.chat))
 })
 
-bot.onText(/\/resetvotacion/, async (msg) => {
-  const chatId = msg.chat.id
-  const activeVote = await storage.getActiveVote(chatId)
-
-  await storage.clearVote(chatId)
-
-  if (!activeVote) {
-    await safeSend(bot, chatId, 'No habia ninguna votacion guardada, pero he limpiado el estado por si se habia quedado atascado.')
-    return
-  }
-
-  await safeSend(
-    bot,
-    chatId,
-    `He reiniciado la votacion activa y he borrado su estado anterior.\n\nPregunta eliminada: _${activeVote.question || 'Sin titulo'}_`,
-  )
-})
-
 bot.onText(/\/memoria/, async (msg) => {
   const game = await storage.getGame(msg.chat.id)
   if (!game || !game.worldMemory?.length) {
@@ -968,7 +506,6 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/nueva - Empieza una partida y crea tu personaje automaticamente',
         '/continuar - Retoma la ultima partida guardada',
         '/seguir - Fuerza a la IA a continuar una escena cortada',
-        '/resetvotacion - Borra una votacion atascada y limpia su estado',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
@@ -983,7 +520,6 @@ bot.onText(/\/ayuda/, async (msg) => {
         '/unirse - Se apunta el siguiente jugador y crea su personaje',
         '/continuar - Retoma la ultima partida guardada',
         '/seguir - Fuerza a la IA a continuar una escena cortada',
-        '/resetvotacion - Borra una votacion atascada y limpia su estado',
         '/estado - Muestra las fichas del grupo',
         '/xp - Muestra la experiencia y el progreso de nivel',
         '/habilidades - Muestra las habilidades desbloqueadas',
@@ -1079,6 +615,17 @@ async function bootstrap() {
   validateEnv()
   await storage.initDB()
   await registerTelegramCommands()
+  if (hasDiscordEnv()) {
+    try {
+      await startDiscordBot({ storage })
+      console.log('Integracion de Discord activada')
+    } catch (error) {
+      console.error('No se pudo iniciar la integracion de Discord:', error.message)
+      console.error('Telegram seguira funcionando mientras revisas DISCORD_TOKEN y DISCORD_CLIENT_ID')
+    }
+  } else {
+    console.log('Integracion de Discord desactivada (faltan DISCORD_TOKEN y/o DISCORD_CLIENT_ID)')
+  }
   console.log('Bot DM Automatico iniciado')
 }
 
