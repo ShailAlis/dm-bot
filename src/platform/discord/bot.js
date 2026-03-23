@@ -92,18 +92,34 @@ async function ensureAdventureThread(interaction) {
   const isThread = typeof channel?.isThread === 'function' && channel.isThread()
 
   if (!interaction.inGuild() || isThread) {
-    return channel
+    return { channel, created: false, usedFallback: false }
   }
 
   if (!channel?.threads || typeof channel.threads.create !== 'function') {
-    return channel
+    return { channel, created: false, usedFallback: true }
   }
 
-  return channel.threads.create({
-    name: buildThreadName(interaction),
-    autoArchiveDuration: 1440,
-    reason: `Nueva partida creada por ${interaction.user.tag}`,
-  })
+  try {
+    const thread = await channel.threads.create({
+      name: buildThreadName(interaction),
+      autoArchiveDuration: 1440,
+      reason: `Nueva partida creada por ${interaction.user.tag}`,
+    })
+    return { channel: thread, created: true, usedFallback: false }
+  } catch (error) {
+    logDiscordInteractionError('No se pudo crear el hilo de aventura; se usara el canal actual.', interaction, error)
+    return { channel, created: false, usedFallback: true }
+  }
+}
+
+function logDiscordInteractionError(message, interaction, error, logError = console.error) {
+  const context = {
+    command: interaction?.isChatInputCommand?.() ? interaction.commandName : interaction?.customId,
+    guildId: interaction?.guildId || null,
+    channelId: interaction?.channelId || null,
+    userId: interaction?.user?.id || null,
+  }
+  logError(message, context, error)
 }
 
 function toDiscordMarkdown(text) {
@@ -533,7 +549,7 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
       if (interaction.commandName === 'nueva') {
         const numPlayers = interaction.options.getInteger('jugadores', true)
-        const targetChannel = await ensureAdventureThread(interaction)
+        const { channel: targetChannel, created: createdThread, usedFallback } = await ensureAdventureThread(interaction)
         const targetScope = getDiscordScopeFromChannel(targetChannel)
         const game = storage.createEmptyGame()
 
@@ -566,7 +582,9 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         await interaction.reply({
           content: [
             `Partida de Discord creada para **${numPlayers}** jugador(es).`,
-            'Este hilo o canal sera el scope de la aventura.',
+            usedFallback
+              ? 'No pude crear un hilo nuevo, asi que esta aventura usara el canal actual como scope.'
+              : (createdThread ? 'Este hilo sera el scope de la aventura.' : 'Este hilo o canal sera el scope de la aventura.'),
             'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
           ].join('\n'),
         })
@@ -823,16 +841,20 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         })
       }
     } catch (error) {
-      logError('Error manejando interaccion de Discord:', error)
+      logDiscordInteractionError('Error manejando interaccion de Discord:', interaction, error, logError)
 
       if (interaction.deferred || interaction.replied) {
         await interaction.followUp({
-          content: 'Ha ocurrido un error procesando la interaccion de Discord.',
+          content: interaction.isChatInputCommand?.() && interaction.commandName === 'nueva'
+            ? 'Ha ocurrido un error procesando /nueva. Revisa si el bot puede crear hilos en este canal o prueba dentro de un hilo existente.'
+            : 'Ha ocurrido un error procesando la interaccion de Discord.',
           ephemeral: true,
         }).catch(() => {})
       } else {
         await interaction.reply({
-          content: 'Ha ocurrido un error procesando la interaccion de Discord.',
+          content: interaction.isChatInputCommand?.() && interaction.commandName === 'nueva'
+            ? 'Ha ocurrido un error procesando /nueva. Revisa si el bot puede crear hilos en este canal o prueba dentro de un hilo existente.'
+            : 'Ha ocurrido un error procesando la interaccion de Discord.',
           ephemeral: true,
         }).catch(() => {})
       }
