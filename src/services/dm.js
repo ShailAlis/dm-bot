@@ -62,6 +62,10 @@ function buildSystemPrompt(game) {
     locations.length ? `LUGARES:\n${locations.map((entry) => `- ${entry.title}: ${entry.description}`).join('\n')}` : '',
     npcs.length ? `NPCS:\n${npcs.map((entry) => `- ${entry.title}: ${entry.description}`).join('\n')}` : '',
   ].filter(Boolean)
+  const hiddenMemory = (game.hiddenMemory || []).slice(-12)
+  const hiddenMemoryBlock = hiddenMemory.length
+    ? `MEMORIA_OCULTA_DEL_DJ:\n${hiddenMemory.map((entry) => `- ${entry}`).join('\n')}`
+    : ''
   const worldContext = game.worldContext ? buildWorldContextString(game.worldContext) : ''
 
   return `Eres un Director de Juego experto en D&D 5e. Diriges para ${game.players.length} jugador(es).
@@ -71,12 +75,18 @@ ${playersDescription}
 
 ${memoryBlocks.length ? `MEMORIA:\n${memoryBlocks.join('\n\n')}` : ''}
 
+${hiddenMemoryBlock}
+
 ${worldContext}
 
 INSTRUCCIONES:
 - Narra en espanol con un estilo claro, evocador y facil de seguir.
 - Usa niveles, habilidades, rasgos y contexto del mundo en la narrativa.
 - Prioriza frases comprensibles y decisiones concretas.
+- Narra SOLO lo que los personajes jugadores pueden percibir directamente, inferir de forma razonable o recordar.
+- No reveles planes, identidades, movimientos, conversaciones ni consecuencias fuera de la percepcion actual del grupo.
+- Como Director de Juego SI puedes llevar la cuenta interna de sucesos ocultos, pero debes registrarlos con lineas separadas usando: OCULTO:[hecho breve]
+- Todo lo que vaya en OCULTO es solo para memoria interna del DJ y no debe mostrarse a los jugadores en la narracion visible.
 - Los jugadores solo pueden decidir las acciones, palabras e intenciones de sus propios personajes.
 - Nunca ofrezcas opciones que permitan decidir directamente por NPCs, enemigos, aliados o criaturas del mundo.
 - Los NPCs actuan, responden y toman decisiones solo bajo tu control como Director de Juego.
@@ -132,6 +142,10 @@ async function callClaude(game, userMessage, systemOverride) {
     messages,
   })
   const text = response.content.map((block) => block.text || '').join('')
+  game.lastClaudeMeta = {
+    stopReason: response.stop_reason || null,
+    text,
+  }
 
   game.history.push({ role: 'user', content: userMessage })
   game.history.push({ role: 'assistant', content: text })
@@ -205,6 +219,13 @@ async function parseDMCommands(chatId, game, text, storage) {
   const rolls = []
   const levelUps = []
   const voteData = { active: false, question: '', options: [] }
+
+  for (const match of text.matchAll(/OCULTO:\s*([^\n]+)/gi)) {
+    if (!game.hiddenMemory) game.hiddenMemory = []
+    game.hiddenMemory.push(match[1].trim())
+  }
+  if (game.hiddenMemory?.length > 30) game.hiddenMemory = game.hiddenMemory.slice(-30)
+  clean = clean.replace(/OCULTO:\s*[^\n]*/gi, '').trim()
 
   for (const match of text.matchAll(/TIRADA:\s*([^\n]+)/gi)) {
     const rollData = parseRollCommand(match[1])

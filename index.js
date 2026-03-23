@@ -553,8 +553,52 @@ async function handleSetup(chatId, game, userText, fromUserId = null, fromUserna
   }
 }
 
-async function handleDmReply(chatId, game, reply, groupChat = false) {
+function findLastAssistantMessage(game) {
+  const history = Array.isArray(game.history) ? [...game.history].reverse() : []
+  return history.find((entry) => entry.role === 'assistant')?.content || ''
+}
+
+function isIncompleteChoiceBlock(reply, actions, voteData) {
+  const text = String(reply || '')
+
+  if (/ACCIONES:\s*$/i.test(text) || /VOTACION:\s*$/i.test(text)) return true
+  if (/ACCIONES:/i.test(text) && actions.length < 2) return true
+  if (/VOTACION:/i.test(text) && (!voteData.active || voteData.options.length < 2)) return true
+
+  return false
+}
+
+async function requestContinuationForCutReply(chatId, game) {
+  const lastAssistant = findLastAssistantMessage(game)
+  const excerpt = lastAssistant.slice(-500)
+
+  return callClaude(
+    game,
+    [
+      'Tu ultima respuesta se ha cortado o ha quedado incompleta justo al final.',
+      'Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena.',
+      'Si estabas empezando a ofrecer opciones, termínalas ahora.',
+      'Debes acabar SIEMPRE con una linea valida de ACCIONES: ... o VOTACION: ... con al menos 2 opciones.',
+      excerpt ? `ULTIMO FRAGMENTO DEL DJ:\n${excerpt}` : '',
+    ].filter(Boolean).join('\n\n'),
+  )
+}
+
+async function handleDmReply(chatId, game, reply, groupChat = false, recoveryDepth = 0) {
   const { clean, rolls, actions, levelUps, voteData } = await parseDMCommands(chatId, game, reply, storage)
+  const stopReason = game.lastClaudeMeta?.stopReason || null
+  const wasCut = stopReason === 'max_tokens' || isIncompleteChoiceBlock(reply, actions, voteData)
+
+  if (wasCut && recoveryDepth < 2) {
+    try {
+      const recoveredReply = await requestContinuationForCutReply(chatId, game)
+      return handleDmReply(chatId, game, recoveredReply, groupChat, recoveryDepth + 1)
+    } catch (error) {
+      console.error('No se pudo recuperar una respuesta cortada:', error)
+      await safeSend(bot, chatId, 'La narracion se ha cortado antes de las opciones. Usa /seguir para forzar la continuacion de la escena.')
+    }
+  }
+
   const formattedNarration = formatDirectorMessage(clean)
 
   for (const currentRoll of rolls) {
@@ -579,7 +623,15 @@ async function handleDmReply(chatId, game, reply, groupChat = false) {
   }
 
   const fallbackActions = voteData.active && voteData.options.length > 0 ? voteData.options : actions
-  await sendWithActions(bot, chatId, formattedNarration, fallbackActions)
+  if (fallbackActions.length > 0) {
+    await sendWithActions(bot, chatId, formattedNarration, fallbackActions)
+    return
+  }
+
+  const suffix = wasCut
+    ? '\n\n_La respuesta llego incompleta. Usa /seguir para pedir al DJ que termine la escena con opciones._'
+    : '\n\n_Si la escena necesita mas impulso, usa /seguir o escribe la accion de tu personaje._'
+  await safeSend(bot, chatId, `${formattedNarration}${suffix}`)
 }
 
 async function startAdventure(chatId, game, groupChat = false) {
@@ -641,12 +693,20 @@ async function continueAdventure(chatId, game, groupChat = false) {
 
 async function forceContinueNarration(chatId, game, groupChat = false) {
   await bot.sendChatAction(chatId, 'typing')
+  const lastAssistant = findLastAssistantMessage(game)
+  const excerpt = lastAssistant.slice(-500)
 
   let reply
   try {
     reply = await callClaude(
       game,
-      'La narracion anterior se ha quedado a medias. Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena. Avanza solo un poco, deja claro que los jugadores siguen teniendo la iniciativa y termina siempre con 2 o 3 decisiones concretas que sus personajes puedan tomar ahora mismo.',
+      [
+        'La narracion anterior se ha quedado a medias o la respuesta del DJ se ha cortado antes de terminar.',
+        'Continua inmediatamente desde el ultimo instante, sin resumir ni reiniciar la escena.',
+        'Si estabas en mitad de una frase, retomala con naturalidad.',
+        'Avanza solo un poco, deja claro que los jugadores siguen teniendo la iniciativa y termina siempre con 2 o 3 decisiones concretas que sus personajes puedan tomar ahora mismo.',
+        excerpt ? `ULTIMO FRAGMENTO DEL DJ:\n${excerpt}` : '',
+      ].filter(Boolean).join('\n\n'),
     )
   } catch (error) {
     await sendClaudeError(chatId, error)

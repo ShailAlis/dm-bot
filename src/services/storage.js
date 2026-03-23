@@ -31,6 +31,7 @@ function createEmptyGame() {
     setupSubStep: 'num_players',
     setupBuffer: {},
     history: [],
+    hiddenMemory: [],
     currentTurn: 0,
     worldMemory: [],
     worldContext: null,
@@ -47,6 +48,7 @@ async function initDB() {
       setup_substep TEXT DEFAULT 'num_players',
       setup_buffer JSONB DEFAULT '{}'::jsonb,
       history JSONB DEFAULT '[]'::jsonb,
+      hidden_memory JSONB DEFAULT '[]'::jsonb,
       current_turn INT DEFAULT 0,
       updated_at TIMESTAMP DEFAULT NOW()
     );
@@ -142,6 +144,7 @@ async function initDB() {
     ALTER TABLE games ADD COLUMN IF NOT EXISTS setup_substep TEXT DEFAULT 'num_players';
     ALTER TABLE games ADD COLUMN IF NOT EXISTS setup_buffer JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE games ADD COLUMN IF NOT EXISTS history JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE games ADD COLUMN IF NOT EXISTS hidden_memory JSONB DEFAULT '[]'::jsonb;
     ALTER TABLE games ADD COLUMN IF NOT EXISTS current_turn INT DEFAULT 0;
     ALTER TABLE games ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
   `)
@@ -241,6 +244,7 @@ async function loadGame(chatId) {
     setupSubStep: gameRow.setup_substep || 'num_players',
     setupBuffer: gameRow.setup_buffer || {},
     history: gameRow.history || [],
+    hiddenMemory: gameRow.hidden_memory || [],
     currentTurn: gameRow.current_turn || 0,
     players: playersResult.rows.map(mapPlayerRow),
     worldMemory: memoryResult.rows || [],
@@ -253,9 +257,9 @@ async function saveGame(chatId, game) {
     await client.query(
       `
         INSERT INTO games (
-          chat_id, phase, num_players, setup_step, setup_substep, setup_buffer, history, current_turn, updated_at
+          chat_id, phase, num_players, setup_step, setup_substep, setup_buffer, history, hidden_memory, current_turn, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
         ON CONFLICT (chat_id) DO UPDATE SET
           phase = $2,
           num_players = $3,
@@ -263,7 +267,8 @@ async function saveGame(chatId, game) {
           setup_substep = $5,
           setup_buffer = $6,
           history = $7,
-          current_turn = $8,
+          hidden_memory = $8,
+          current_turn = $9,
           updated_at = NOW()
       `,
       [
@@ -274,6 +279,7 @@ async function saveGame(chatId, game) {
         game.setupSubStep,
         JSON.stringify(game.setupBuffer || {}),
         JSON.stringify(game.history || []),
+        JSON.stringify(game.hiddenMemory || []),
         game.currentTurn || 0,
       ],
     )

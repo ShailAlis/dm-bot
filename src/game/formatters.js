@@ -132,7 +132,8 @@ function formatRoll(roll) {
   let suffix = ''
   if (roll.tiradaBase === 20 || roll.resultado === 20) suffix = ' - critico'
   if (roll.tiradaBase === 1 || roll.resultado === 1) suffix = ' - pifia'
-  const modifierText = roll.modificador
+  const hasModifier = typeof roll.modificador === 'number'
+  const modifierText = hasModifier
     ? ` (${roll.tiradaBase ?? roll.resultado} ${roll.modificador >= 0 ? '+' : '-'} ${Math.abs(roll.modificador)})`
     : ''
   const actorPrefix = roll.actor ? `${roll.actor} - ` : ''
