@@ -706,6 +706,8 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
       const scope = getDiscordScopeFromInteraction(interaction)
 
       if (interaction.commandName === 'nueva') {
+        await interaction.deferReply({ ephemeral: true })
+
         const numPlayers = interaction.options.getInteger('jugadores', true)
         const game = storage.createEmptyGame()
         const worldContext = generateWorldContext()
@@ -726,9 +728,8 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         storage.setCachedGame(targetScope, game)
 
         if (interaction.inGuild() && targetChannel.id !== interaction.channelId) {
-          await interaction.reply({
+          await interaction.editReply({
             content: `**${adventureTitle}** creada en <#${targetChannel.id}> para ${numPlayers} jugador(es). Usa ese hilo para /unirse y jugar esta aventura.`,
-            ephemeral: true,
           })
 
           if (typeof targetChannel.send === 'function') {
@@ -742,7 +743,7 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           return
         }
 
-        await interaction.reply({
+        await interaction.editReply({
           content: [
             `**${adventureTitle}**`,
             `Partida de Discord creada para **${numPlayers}** jugador(es).`,
