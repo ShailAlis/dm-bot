@@ -2,3 +2,4 @@
 .env.example
 node_modules
 DONATIONS_SETUP.md
+DISCORD_SETUP.md
