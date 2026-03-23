@@ -708,51 +708,68 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
       if (interaction.commandName === 'nueva') {
         await interaction.deferReply({ ephemeral: true })
 
-        const numPlayers = interaction.options.getInteger('jugadores', true)
-        const game = storage.createEmptyGame()
-        const worldContext = generateWorldContext()
-        const adventureTitle = buildAdventureTitle(worldContext)
-        const { channel: targetChannel, created: createdThread, usedFallback } = await ensureAdventureThread(interaction, adventureTitle)
-        const targetScope = getDiscordScopeFromChannel(targetChannel)
+        let newGameStep = 'leyendo opciones'
 
-        game.phase = 'setup'
-        game.numPlayers = numPlayers
-        game.setupSubStep = 'name'
-        game.worldContext = worldContext
-        game.setupBuffer = { ...game.setupBuffer, adventureTitle }
-        game.scope = targetScope
+        try {
+          const numPlayers = interaction.options.getInteger('jugadores', true)
+          const game = storage.createEmptyGame()
 
-        await storage.resetGame(targetScope)
-        storage.clearCachedGame(targetScope)
-        await storage.saveGame(targetScope, game)
-        storage.setCachedGame(targetScope, game)
+          newGameStep = 'generando contexto del mundo'
+          const worldContext = generateWorldContext()
+          const adventureTitle = buildAdventureTitle(worldContext)
 
-        if (interaction.inGuild() && targetChannel.id !== interaction.channelId) {
-          await interaction.editReply({
-            content: `**${adventureTitle}** creada en <#${targetChannel.id}> para ${numPlayers} jugador(es). Usa ese hilo para /unirse y jugar esta aventura.`,
-          })
+          newGameStep = 'creando o resolviendo el hilo de partida'
+          const { channel: targetChannel, created: createdThread, usedFallback } = await ensureAdventureThread(interaction, adventureTitle)
+          const targetScope = getDiscordScopeFromChannel(targetChannel)
 
-          if (typeof targetChannel.send === 'function') {
-            await targetChannel.send([
-              `**${adventureTitle}**`,
-              `Nueva partida creada para **${numPlayers}** jugador(es).`,
-              'Este hilo sera el espacio de esta aventura.',
-              'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
-            ].join('\n'))
+          game.phase = 'setup'
+          game.numPlayers = numPlayers
+          game.setupSubStep = 'name'
+          game.worldContext = worldContext
+          game.setupBuffer = { ...game.setupBuffer, adventureTitle }
+          game.scope = targetScope
+
+          newGameStep = 'reseteando el estado previo de la partida'
+          await storage.resetGame(targetScope)
+          storage.clearCachedGame(targetScope)
+
+          newGameStep = 'guardando la nueva partida'
+          await storage.saveGame(targetScope, game)
+          storage.setCachedGame(targetScope, game)
+
+          newGameStep = 'respondiendo a Discord'
+          if (interaction.inGuild() && targetChannel.id !== interaction.channelId) {
+            await interaction.editReply({
+              content: `**${adventureTitle}** creada en <#${targetChannel.id}> para ${numPlayers} jugador(es). Usa ese hilo para /unirse y jugar esta aventura.`,
+            })
+
+            if (typeof targetChannel.send === 'function') {
+              await targetChannel.send([
+                `**${adventureTitle}**`,
+                `Nueva partida creada para **${numPlayers}** jugador(es).`,
+                'Este hilo sera el espacio de esta aventura.',
+                'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
+              ].join('\n'))
+            }
+            return
           }
-          return
-        }
 
-        await interaction.editReply({
-          content: [
-            `**${adventureTitle}**`,
-            `Partida de Discord creada para **${numPlayers}** jugador(es).`,
-            usedFallback
-              ? 'No pude crear un hilo nuevo, asi que esta aventura usara el canal actual como scope.'
-              : (createdThread ? 'Este hilo sera el scope de la aventura.' : 'Este hilo o canal sera el scope de la aventura.'),
-            'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
-          ].join('\n'),
-        })
+          await interaction.editReply({
+            content: [
+              `**${adventureTitle}**`,
+              `Partida de Discord creada para **${numPlayers}** jugador(es).`,
+              usedFallback
+                ? 'No pude crear un hilo nuevo, asi que esta aventura usara el canal actual como scope.'
+                : (createdThread ? 'Este hilo sera el scope de la aventura.' : 'Este hilo o canal sera el scope de la aventura.'),
+              'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
+            ].join('\n'),
+          })
+        } catch (error) {
+          logDiscordInteractionError(`Error en /nueva durante: ${newGameStep}`, interaction, error, logError)
+          await interaction.editReply({
+            content: `Error en /nueva durante "${newGameStep}": ${error.message}`,
+          }).catch(() => {})
+        }
         return
       }
 
