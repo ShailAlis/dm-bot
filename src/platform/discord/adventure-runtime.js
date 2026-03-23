@@ -7,7 +7,7 @@ const {
   formatDirectorMessage,
   formatRoll,
 } = require('../../game/formatters')
-const { getActionButtonRows, getVoteButtonRows, toDiscordMarkdown } = require('./utils')
+const { getActionButtonRows, getVoteButtonRows, toDiscordMarkdown, formatOptionList } = require('./utils')
 
 function createDiscordAdventureHandlers(client, storage, logError) {
   return createAdventureHandlers({
@@ -35,7 +35,7 @@ function createDiscordAdventureHandlers(client, storage, logError) {
       if (!channel || typeof channel.send !== 'function') return
 
       const content = actions?.length
-        ? `${toDiscordMarkdown(text)}\n\n**Acciones sugeridas**\n${actions.map((action, index) => `${index + 1}. ${action}`).join('\n')}`
+        ? `${toDiscordMarkdown(text)}\n\n${formatOptionList(actions, 'Acciones sugeridas')}`
         : toDiscordMarkdown(text)
 
       const components = getActionButtonRows(actions)
@@ -50,7 +50,7 @@ function createDiscordAdventureHandlers(client, storage, logError) {
         ? `\n\n*Esperando el voto de ${voterIds.length} jugador(es).*`
         : ''
       await channel.send({
-        content: `**Decision de grupo**\n\n${question}${footer}`,
+        content: `**Decision de grupo**\n\n${question}\n\n${formatOptionList(options, 'Opciones de voto')}${footer}`,
         components: getVoteButtonRows(options),
       })
     },

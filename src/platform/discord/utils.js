@@ -98,6 +98,31 @@ function toDiscordMarkdown(text) {
     .replace(/_([^_\n]+)_/g, '*$1*')
 }
 
+function buildButtonLabel(value, index, maxLength = 80) {
+  const prefix = `${index + 1}. `
+  const raw = String(value || '').replace(/\s+/g, ' ').trim()
+  const available = Math.max(8, maxLength - prefix.length)
+
+  if (raw.length <= available) {
+    return `${prefix}${raw}`
+  }
+
+  const shortened = raw.slice(0, available - 1)
+  const safe = shortened.includes(' ')
+    ? shortened.slice(0, shortened.lastIndexOf(' '))
+    : shortened
+
+  return `${prefix}${(safe || shortened).trim()}...`
+}
+
+function formatOptionList(options, heading = 'Opciones') {
+  if (!Array.isArray(options) || options.length === 0) return ''
+  return [
+    `**${heading}**`,
+    ...options.map((option, index) => `${index + 1}. ${option}`),
+  ].join('\n')
+}
+
 function chunkButtons(options, columns = 2) {
   const rows = []
 
@@ -108,7 +133,7 @@ function chunkButtons(options, columns = 2) {
         ...slice.map((option, offset) => (
           new ButtonBuilder()
             .setCustomId(`${VOTE_BUTTON_PREFIX}${index + offset}`)
-            .setLabel(String(option).slice(0, 80))
+            .setLabel(buildButtonLabel(option, index + offset))
             .setStyle(ButtonStyle.Secondary)
         )),
       ),
@@ -120,7 +145,7 @@ function chunkButtons(options, columns = 2) {
 
 function getVoteButtonRows(options) {
   const longestOption = options.reduce((max, option) => Math.max(max, String(option || '').length), 0)
-  return chunkButtons(options, longestOption > 24 ? 1 : 2)
+  return chunkButtons(options, longestOption > 18 ? 1 : 2)
 }
 
 function encodeActionCustomId(action) {
@@ -144,7 +169,7 @@ function getActionButtonRows(actions) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(current.customId)
-          .setLabel(String(current.action).slice(0, 80))
+          .setLabel(buildButtonLabel(current.action, index))
           .setStyle(ButtonStyle.Primary),
       ),
     )
@@ -299,6 +324,7 @@ module.exports = {
   cleanAdventureTitle,
   buildAdventureTitle,
   buildThreadName,
+  formatOptionList,
   logDiscordInteractionError,
   toDiscordMarkdown,
   getVoteButtonRows,

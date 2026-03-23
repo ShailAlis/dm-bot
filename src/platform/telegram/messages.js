@@ -27,9 +27,10 @@ async function safeSend(bot, chatId, text, options = {}) {
 }
 
 async function sendWithActions(bot, chatId, text, actions = []) {
+  const columns = getButtonColumns(actions)
   const keyboardRows = actions.reduce((rows, action) => {
     const currentRow = rows[rows.length - 1]
-    if (!currentRow || currentRow.length >= 2) {
+    if (!currentRow || currentRow.length >= columns) {
       rows.push([{ text: action }])
     } else {
       currentRow.push({ text: action })
@@ -76,7 +77,12 @@ function buildInlineKeyboard(options, columns = 2) {
 
 function getVoteColumns(options) {
   const longestOption = options.reduce((max, option) => Math.max(max, String(option || '').length), 0)
-  return longestOption > 24 ? 1 : 2
+  return longestOption > 18 ? 1 : 2
+}
+
+function getButtonColumns(options) {
+  const longestOption = options.reduce((max, option) => Math.max(max, String(option || '').length), 0)
+  return longestOption > 18 ? 1 : 2
 }
 
 async function sendVote(bot, chatId, question, options, requiredVoters, storage) {
