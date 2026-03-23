@@ -29,7 +29,7 @@ function hasWebEnv() {
 }
 
 function hasTelegramEnv() {
-  return requireEnv('TELEGRAM_TOKEN')
+  return requireEnv('TELEGRAM_TOKEN') && !isDisabled('TELEGRAM_DISABLED')
 }
 
 function validateEnv() {
