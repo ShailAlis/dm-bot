@@ -3,6 +3,7 @@ const {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
@@ -245,11 +246,91 @@ function parseCharacterDetails(rawValue) {
   }
 }
 
+function getPlayerByDiscordUserId(game, userId) {
+  return game?.players?.find((player) => String(player.platformUserId) === String(userId)) || null
+}
+
+function getDiscordActorLabel(game, user, fallback = 'Jugador') {
+  const playerCharacter = getPlayerByDiscordUserId(game, user?.id)
+  return playerCharacter?.name || user?.globalName || user?.username || fallback
+}
+
+function isDiscordPlayerInGame(game, userId) {
+  return Boolean(getPlayerByDiscordUserId(game, userId))
+}
+
 function isPendingPlayerExpired(pendingPlayer, maxAgeMs = 10 * 60 * 1000) {
   if (!pendingPlayer?.startedAt) return false
   const startedAt = new Date(pendingPlayer.startedAt).getTime()
   if (Number.isNaN(startedAt)) return false
   return (Date.now() - startedAt) > maxAgeMs
+}
+
+async function createPrivateAdventureThread(interaction, game, logError = console.error) {
+  if (!interaction.inGuild()) return null
+
+  const currentChannel = interaction.channel
+  const parentChannel = typeof currentChannel?.isThread === 'function' && currentChannel.isThread()
+    ? currentChannel.parent
+    : currentChannel
+
+  if (!parentChannel?.threads || typeof parentChannel.threads.create !== 'function') {
+    return null
+  }
+
+  try {
+    const privateThread = await parentChannel.threads.create({
+      name: `${buildThreadName(interaction)}-mesa`,
+      autoArchiveDuration: 1440,
+      type: ChannelType.PrivateThread,
+      invitable: false,
+      reason: `Mesa privada para la partida de ${interaction.user.tag}`,
+    })
+
+    for (const player of game.players || []) {
+      if (player.platform === 'discord' && player.platformUserId) {
+        await privateThread.members.add(player.platformUserId).catch((error) => {
+          logError('No se pudo anadir un jugador al hilo privado de la partida:', {
+            threadId: privateThread.id,
+            playerId: player.platformUserId,
+          }, error)
+        })
+      }
+    }
+
+    return privateThread
+  } catch (error) {
+    logError('No se pudo crear el hilo privado de aventura.', {
+      guildId: interaction.guildId || null,
+      channelId: interaction.channelId || null,
+    }, error)
+    return null
+  }
+}
+
+async function closePreparationThread(channel, privateThreadId, logError = console.error) {
+  if (!channel || typeof channel.send !== 'function') return
+
+  await channel.send([
+    '**Preparacion cerrada**',
+    `La partida continua a partir de ahora en <#${privateThreadId}>.`,
+    'Este espacio queda solo como historial de creacion del grupo.',
+  ].join('\n')).catch(() => {})
+
+  const isThread = typeof channel.isThread === 'function' && channel.isThread()
+  if (!isThread) return
+
+  if (typeof channel.setLocked === 'function') {
+    await channel.setLocked(true, 'La partida se ha movido a una mesa privada').catch((error) => {
+      logError('No se pudo bloquear el hilo de preparacion.', { channelId: channel.id }, error)
+    })
+  }
+
+  if (typeof channel.setArchived === 'function') {
+    await channel.setArchived(true, 'La partida se ha movido a una mesa privada').catch((error) => {
+      logError('No se pudo archivar el hilo de preparacion.', { channelId: channel.id }, error)
+    })
+  }
 }
 
 function createDiscordAdventureHandlers(client, storage, logError) {
@@ -420,16 +501,51 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         game.scope = scope
         clearPendingPlayer(game)
 
-        await storage.saveGame(scope, game)
-        storage.setCachedGame(scope, game)
-
-        await interaction.reply({
-          content: `**${player.name}** se une a la aventura como ${player.race} ${player.class} de nivel 1.`,
-        })
-
         if (game.setupStep >= game.numPlayers) {
-          await adventureHandlers.startAdventure(scope, game, interaction.inGuild())
+          await interaction.reply({
+            content: `**${player.name}** completa el grupo. Estoy preparando la mesa privada de la aventura...`,
+            ephemeral: true,
+          })
+
+          let adventureScope = scope
+          const privateThread = await createPrivateAdventureThread(interaction, game, logError)
+
+          if (privateThread) {
+            adventureScope = getDiscordScopeFromChannel(privateThread)
+            game.scope = adventureScope
+
+            await storage.saveGame(adventureScope, game)
+            storage.setCachedGame(adventureScope, game)
+            await storage.deleteGame(scope)
+            storage.clearCachedGame(scope)
+
+            await closePreparationThread(interaction.channel, privateThread.id, logError)
+
+            if (typeof privateThread.send === 'function') {
+              await privateThread.send([
+                `**Mesa privada lista** para ${game.players.length} jugador(es).`,
+                'A partir de ahora solo los personajes registrados y el bot deberian participar aqui.',
+              ].join('\n')).catch(() => {})
+            }
+          } else {
+            await storage.saveGame(scope, game)
+            storage.setCachedGame(scope, game)
+
+            await interaction.followUp({
+              content: 'No pude cerrar la mesa en un hilo privado, asi que seguire en este hilo con restriccion logica de jugador.',
+              ephemeral: true,
+            }).catch(() => {})
+          }
+
+          await adventureHandlers.startAdventure(adventureScope, game, interaction.inGuild())
         } else {
+          await storage.saveGame(scope, game)
+          storage.setCachedGame(scope, game)
+
+          await interaction.reply({
+            content: `**${player.name}** se une a la aventura como ${player.race} ${player.class} de nivel 1.`,
+          })
+
           await interaction.followUp({
             content: `Personaje ${game.setupStep} de ${game.numPlayers} completado. El siguiente jugador puede usar /unirse.`,
           })
@@ -460,6 +576,15 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           return
         }
 
+        const requiredVoters = (vote.required_voters || []).map(String)
+        if (!requiredVoters.includes(String(interaction.user.id))) {
+          await interaction.reply({
+            content: 'Solo los jugadores de esta partida pueden votar en esta decision.',
+            ephemeral: true,
+          })
+          return
+        }
+
         await interaction.reply({
           content: `Has votado: "${choice}"`,
           ephemeral: true,
@@ -470,7 +595,9 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
         const channel = interaction.channel
         if (channel && typeof channel.send === 'function') {
-          await channel.send(toDiscordMarkdown(formatVoteProgress(interaction.user.username, choice)))
+          const game = await storage.getGame(scope)
+          const actorLabel = getDiscordActorLabel(game, interaction.user)
+          await channel.send(toDiscordMarkdown(formatVoteProgress(actorLabel, choice)))
         }
 
         if (!result.allVoted) return
@@ -512,10 +639,18 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           return
         }
 
+        if (!isDiscordPlayerInGame(game, interaction.user.id)) {
+          await interaction.reply({
+            content: 'Solo los jugadores registrados en esta partida pueden actuar en este hilo.',
+            ephemeral: true,
+          })
+          return
+        }
+
         const text = decodeURIComponent(interaction.customId.slice(ACTION_BUTTON_PREFIX.length))
-        const playerCharacter = game.players.find((player) => player.platformUserId === interaction.user.id)
-        const actorLabel = playerCharacter ? playerCharacter.name : interaction.user.username
-        const userMessage = playerCharacter ? `[${playerCharacter.name}]: ${text}` : `[${interaction.user.username}]: ${text}`
+        const playerCharacter = getPlayerByDiscordUserId(game, interaction.user.id)
+        const actorLabel = getDiscordActorLabel(game, interaction.user)
+        const userMessage = playerCharacter ? `[${playerCharacter.name}]: ${text}` : `[${actorLabel}]: ${text}`
 
         await interaction.reply({
           content: `Has elegido: "${text}"`,
@@ -634,7 +769,7 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           ...game.setupBuffer,
           pendingPlayer: {
             userId: interaction.user.id,
-            username: interaction.user.username,
+            username: interaction.user.globalName || interaction.user.username,
             startedAt: new Date().toISOString(),
           },
         }
@@ -761,6 +896,14 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           return
         }
 
+        if (!isDiscordPlayerInGame(game, interaction.user.id)) {
+          await interaction.reply({
+            content: 'Solo los jugadores registrados en esta partida pueden continuar la aventura.',
+            ephemeral: true,
+          })
+          return
+        }
+
         storage.setCachedGame(scope, game)
         await interaction.reply({
           content: 'Reanudando la aventura en este scope de Discord...',
@@ -775,6 +918,14 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         if (!game || game.phase !== 'adventure') {
           await interaction.reply({
             content: 'No hay una escena activa para continuar. Usa /nueva o /continuar.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        if (!isDiscordPlayerInGame(game, interaction.user.id)) {
+          await interaction.reply({
+            content: 'Solo los jugadores registrados en esta partida pueden empujar la escena hacia adelante.',
             ephemeral: true,
           })
           return
@@ -799,10 +950,18 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           return
         }
 
+        if (!isDiscordPlayerInGame(game, interaction.user.id)) {
+          await interaction.reply({
+            content: 'Solo los jugadores registrados en esta partida pueden actuar en la escena.',
+            ephemeral: true,
+          })
+          return
+        }
+
         const text = interaction.options.getString('texto', true).trim()
-        const playerCharacter = game.players.find((player) => player.platformUserId === interaction.user.id)
-        const actorLabel = playerCharacter ? playerCharacter.name : interaction.user.username
-        const userMessage = playerCharacter ? `[${playerCharacter.name}]: ${text}` : `[${interaction.user.username}]: ${text}`
+        const playerCharacter = getPlayerByDiscordUserId(game, interaction.user.id)
+        const actorLabel = getDiscordActorLabel(game, interaction.user)
+        const userMessage = playerCharacter ? `[${playerCharacter.name}]: ${text}` : `[${actorLabel}]: ${text}`
 
         await interaction.reply({
           content: `${actorLabel} actua...`,
