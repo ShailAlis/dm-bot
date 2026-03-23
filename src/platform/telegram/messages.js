@@ -1,15 +1,28 @@
 const { formatLevelUp } = require('../../game/formatters')
+const { logErrorWithContext } = require('../../core/errors')
 
 async function safeSend(bot, chatId, text, options = {}) {
   const sendOptions = { parse_mode: 'Markdown', ...options }
 
   try {
     await bot.sendMessage(chatId, text, sendOptions)
+    return true
   } catch (error) {
     const fallbackText = text.replace(/[*_`]/g, '')
     const fallbackOptions = { ...sendOptions }
     delete fallbackOptions.parse_mode
-    await bot.sendMessage(chatId, fallbackText, fallbackOptions)
+
+    try {
+      await bot.sendMessage(chatId, fallbackText, fallbackOptions)
+      return true
+    } catch (fallbackError) {
+      logErrorWithContext('No se pudo enviar mensaje por Telegram ni con fallback.', fallbackError, {
+        chatId,
+        originalError: error.message,
+        textPreview: String(text || '').slice(0, 160),
+      })
+      return false
+    }
   }
 }
 
@@ -47,6 +60,15 @@ function getVoteColumns(options) {
 }
 
 async function sendVote(bot, chatId, question, options, requiredVoters, storage) {
+  if (!Array.isArray(options) || options.length < 2) {
+    logErrorWithContext('Intento de crear votacion invalida en Telegram.', new Error('Opciones insuficientes'), {
+      chatId,
+      question,
+      options,
+    })
+    return false
+  }
+
   const columns = getVoteColumns(options)
   const keyboard = {
     inline_keyboard: buildInlineKeyboard(options, columns),
@@ -56,7 +78,7 @@ async function sendVote(bot, chatId, question, options, requiredVoters, storage)
     : ''
 
   await storage.createVote(chatId, question, options, requiredVoters)
-  await safeSend(bot, chatId, `*Decision de grupo*\n\n${question}${footer}`, { reply_markup: keyboard })
+  return safeSend(bot, chatId, `*Decision de grupo*\n\n${question}${footer}`, { reply_markup: keyboard })
 }
 
 async function sendLevelUpMessage(bot, chatId, levelUp) {

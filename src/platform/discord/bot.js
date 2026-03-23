@@ -11,6 +11,7 @@ const {
   Partials,
   REST,
   Routes,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
 } = require('discord.js')
@@ -34,8 +35,14 @@ const { buildDiscordCommands } = require('./commands')
 const { getDiscordScopeFromChannel, getDiscordScopeFromInteraction } = require('./scope')
 
 const JOIN_MODAL_ID = 'discord_join_character'
+const JOIN_RACE_SELECT_ID = 'discord_join_race'
+const JOIN_CLASS_SELECT_ID = 'discord_join_class'
+const JOIN_CONTINUE_BUTTON_ID = 'discord_join_continue'
 const VOTE_BUTTON_PREFIX = 'vote:'
 const ACTION_BUTTON_PREFIX = 'action:'
+
+const RACE_OPTIONS = ['humano', 'elfo', 'enano', 'mediano', 'draconido', 'gnomo', 'semielfo', 'semiorco', 'tiflin']
+const CLASS_OPTIONS = ['guerrero', 'mago', 'picaro', 'clerigo', 'barbaro', 'bardo', 'druida', 'explorador', 'paladin', 'hechicero', 'brujo', 'monje']
 
 function hasDiscordEnv() {
   return Boolean(process.env.DISCORD_TOKEN && process.env.DISCORD_CLIENT_ID)
@@ -206,6 +213,62 @@ function getActionButtonRows(actions) {
   return rows
 }
 
+function capitalizeLabel(value) {
+  const text = String(value || '')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+function buildJoinSelectionContent(pendingPlayer) {
+  const selectedRace = pendingPlayer?.selectedRace ? capitalizeLabel(pendingPlayer.selectedRace) : '_Sin elegir_'
+  const selectedClass = pendingPlayer?.selectedClass ? capitalizeLabel(pendingPlayer.selectedClass) : '_Sin elegir_'
+
+  return [
+    '**Crear personaje**',
+    '',
+    `Raza: ${selectedRace}`,
+    `Clase: ${selectedClass}`,
+    '',
+    'Selecciona raza y clase en los desplegables. Cuando ambas esten definidas, pulsa **Continuar** para abrir el formulario con nombre, trasfondo, rasgo y motivacion.',
+  ].join('\n')
+}
+
+function buildJoinSelectionComponents(pendingPlayer) {
+  const raceSelect = new StringSelectMenuBuilder()
+    .setCustomId(JOIN_RACE_SELECT_ID)
+    .setPlaceholder('Elige una raza')
+    .addOptions(
+      RACE_OPTIONS.map((race) => ({
+        label: capitalizeLabel(race),
+        value: race,
+        default: pendingPlayer?.selectedRace === race,
+      })),
+    )
+
+  const classSelect = new StringSelectMenuBuilder()
+    .setCustomId(JOIN_CLASS_SELECT_ID)
+    .setPlaceholder('Elige una clase')
+    .addOptions(
+      CLASS_OPTIONS.map((playerClass) => ({
+        label: capitalizeLabel(playerClass),
+        value: playerClass,
+        default: pendingPlayer?.selectedClass === playerClass,
+      })),
+    )
+
+  const canContinue = Boolean(pendingPlayer?.selectedRace && pendingPlayer?.selectedClass)
+  const continueButton = new ButtonBuilder()
+    .setCustomId(JOIN_CONTINUE_BUTTON_ID)
+    .setLabel('Continuar')
+    .setStyle(ButtonStyle.Success)
+    .setDisabled(!canContinue)
+
+  return [
+    new ActionRowBuilder().addComponents(raceSelect),
+    new ActionRowBuilder().addComponents(classSelect),
+    new ActionRowBuilder().addComponents(continueButton),
+  ]
+}
+
 function buildJoinModal() {
   return new ModalBuilder()
     .setCustomId(JOIN_MODAL_ID)
@@ -218,24 +281,6 @@ function buildJoinModal() {
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(50),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('race')
-          .setLabel('Raza')
-          .setPlaceholder('humano, elfo, enano...')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(30),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('class')
-          .setLabel('Clase')
-          .setPlaceholder('guerrero, mago, picaro...')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(30),
       ),
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
@@ -495,6 +540,14 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
           return
         }
 
+        if (!pendingPlayer?.selectedRace || !pendingPlayer?.selectedClass) {
+          await interaction.reply({
+            content: 'Antes de completar el personaje debes elegir una raza y una clase desde los desplegables.',
+            ephemeral: true,
+          })
+          return
+        }
+
         if (game.players.some((player) => player.platformUserId === platformUserId || player.telegramUserId === platformUserId)) {
           await interaction.reply({
             content: 'Ya tienes un personaje en esta partida.',
@@ -506,8 +559,8 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         const details = parseCharacterDetails(interaction.fields.getTextInputValue('details'))
         const player = createPlayer(
           interaction.fields.getTextInputValue('name').trim(),
-          resolveRaceValue(interaction.fields.getTextInputValue('race').trim()),
-          resolveClassValue(interaction.fields.getTextInputValue('class').trim()),
+          resolveRaceValue(pendingPlayer.selectedRace),
+          resolveClassValue(pendingPlayer.selectedClass),
           interaction.fields.getTextInputValue('background').trim(),
           details.trait,
           details.motivation,
@@ -576,78 +629,198 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
         return
       }
 
-      if (interaction.isButton() && interaction.customId.startsWith(VOTE_BUTTON_PREFIX)) {
+      if (interaction.isStringSelectMenu() && [JOIN_RACE_SELECT_ID, JOIN_CLASS_SELECT_ID].includes(interaction.customId)) {
         const scope = getDiscordScopeFromInteraction(interaction)
-        const vote = await storage.getActiveVote(scope)
-
-        if (!vote) {
-          await interaction.reply({
-            content: 'No hay una votacion activa en este scope.',
-            ephemeral: true,
-          })
-          return
-        }
-
-        const optionIndex = Number.parseInt(interaction.customId.slice(VOTE_BUTTON_PREFIX.length), 10)
-        const choice = vote.options?.[optionIndex]
-
-        if (!choice) {
-          await interaction.reply({
-            content: 'La opcion de voto ya no es valida.',
-            ephemeral: true,
-          })
-          return
-        }
-
-        const requiredVoters = (vote.required_voters || []).map(String)
-        if (!requiredVoters.includes(String(interaction.user.id))) {
-          await interaction.reply({
-            content: 'Solo los jugadores de esta partida pueden votar en esta decision.',
-            ephemeral: true,
-          })
-          return
-        }
-
-        await interaction.reply({
-          content: `Has votado: "${choice}"`,
-          ephemeral: true,
-        })
-
-        const result = await storage.castVote(scope, interaction.user.id, choice)
-        if (!result) return
-
-        const channel = interaction.channel
-        if (channel && typeof channel.send === 'function') {
-          const game = await storage.getGame(scope)
-          const actorLabel = getDiscordActorLabel(game, interaction.user)
-          await channel.send(toDiscordMarkdown(formatVoteProgress(actorLabel, choice)))
-        }
-
-        if (!result.allVoted) return
-
-        await storage.clearVote(scope)
-
-        const { winner, summary } = computeVoteOutcome(result.vote.votes)
-        if (channel && typeof channel.send === 'function') {
-          await channel.send(toDiscordMarkdown(formatVoteResult(summary, winner)))
-        }
-
         const game = await storage.getGame(scope)
-        if (!game || game.phase !== 'adventure') return
 
-        let reply
-        try {
-          reply = await callClaude(game, `El grupo ha decidido por votacion: "${winner}". Narra las consecuencias.`)
-        } catch (error) {
-          if (channel && typeof channel.send === 'function') {
-            await channel.send(`Error con Claude: \`${error.message}\``).catch(() => {})
-          }
+        if (!game || game.phase !== 'setup') {
+          await interaction.reply({
+            content: 'No hay una partida en configuracion en este canal o hilo. Usa /nueva primero.',
+            ephemeral: true,
+          })
           return
         }
 
-        await adventureHandlers.handleDmReply(scope, game, reply, interaction.inGuild())
+        const pendingPlayer = game.setupBuffer?.pendingPlayer
+        if (!pendingPlayer || String(pendingPlayer.userId) !== String(interaction.user.id)) {
+          await interaction.reply({
+            content: 'Ahora mismo no eres quien esta creando personaje en esta partida. Usa /unirse para empezar tu turno.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        if (isPendingPlayerExpired(pendingPlayer)) {
+          clearPendingPlayer(game)
+          await storage.saveGame(scope, game)
+          storage.setCachedGame(scope, game)
+          await interaction.reply({
+            content: 'Tu turno de creacion habia caducado. Usa /unirse para retomarlo.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        const selectedValue = interaction.values?.[0]
+        if (interaction.customId === JOIN_RACE_SELECT_ID) {
+          pendingPlayer.selectedRace = resolveRaceValue(selectedValue)
+        }
+
+        if (interaction.customId === JOIN_CLASS_SELECT_ID) {
+          pendingPlayer.selectedClass = resolveClassValue(selectedValue)
+        }
+
+        game.setupBuffer = { ...game.setupBuffer, pendingPlayer }
         await storage.saveGame(scope, game)
         storage.setCachedGame(scope, game)
+
+        await interaction.update({
+          content: buildJoinSelectionContent(pendingPlayer),
+          components: buildJoinSelectionComponents(pendingPlayer),
+        })
+        return
+      }
+
+      if (interaction.isButton() && interaction.customId === JOIN_CONTINUE_BUTTON_ID) {
+        const scope = getDiscordScopeFromInteraction(interaction)
+        const game = await storage.getGame(scope)
+
+        if (!game || game.phase !== 'setup') {
+          await interaction.reply({
+            content: 'No hay una partida en configuracion en este canal o hilo. Usa /nueva primero.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        const pendingPlayer = game.setupBuffer?.pendingPlayer
+        if (!pendingPlayer || String(pendingPlayer.userId) !== String(interaction.user.id)) {
+          await interaction.reply({
+            content: 'Ahora mismo no eres quien esta creando personaje en esta partida. Usa /unirse para empezar tu turno.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        if (!pendingPlayer.selectedRace || !pendingPlayer.selectedClass) {
+          await interaction.reply({
+            content: 'Primero debes elegir una raza y una clase.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        await interaction.showModal(buildJoinModal())
+        return
+      }
+
+      if (interaction.isButton() && interaction.customId.startsWith(VOTE_BUTTON_PREFIX)) {
+        let voteStep = 'cargando scope de votacion'
+
+        try {
+          const scope = getDiscordScopeFromInteraction(interaction)
+
+          voteStep = 'buscando la votacion activa'
+          const vote = await storage.getActiveVote(scope)
+
+          if (!vote) {
+            await interaction.reply({
+              content: 'No hay una votacion activa en este scope.',
+              ephemeral: true,
+            })
+            return
+          }
+
+          voteStep = 'validando la opcion elegida'
+          const optionIndex = Number.parseInt(interaction.customId.slice(VOTE_BUTTON_PREFIX.length), 10)
+          const choice = vote.options?.[optionIndex]
+
+          if (!choice) {
+            await interaction.reply({
+              content: 'La opcion de voto ya no es valida.',
+              ephemeral: true,
+            })
+            return
+          }
+
+          const requiredVoters = (vote.required_voters || []).map(String)
+          if (!requiredVoters.includes(String(interaction.user.id))) {
+            await interaction.reply({
+              content: 'Solo los jugadores de esta partida pueden votar en esta decision.',
+              ephemeral: true,
+            })
+            return
+          }
+
+          voteStep = 'confirmando el voto al usuario'
+          await interaction.reply({
+            content: `Has votado: "${choice}"`,
+            ephemeral: true,
+          })
+
+          voteStep = 'registrando el voto en storage'
+          const result = await storage.castVote(scope, interaction.user.id, choice)
+          if (!result) {
+            throw new Error('storage.castVote devolvio null')
+          }
+
+          const channel = interaction.channel
+          if (channel && typeof channel.send === 'function') {
+            voteStep = 'anunciando el voto en el hilo'
+            const game = await storage.getGame(scope)
+            const actorLabel = getDiscordActorLabel(game, interaction.user)
+            await channel.send(toDiscordMarkdown(formatVoteProgress(actorLabel, choice)))
+          }
+
+          if (!result.allVoted) return
+
+          voteStep = 'limpiando la votacion completada'
+          await storage.clearVote(scope)
+
+          voteStep = 'calculando el resultado de la votacion'
+          const { winner, summary } = computeVoteOutcome(result.vote.votes)
+          if (channel && typeof channel.send === 'function') {
+            voteStep = 'anunciando el resultado de la votacion'
+            await channel.send(toDiscordMarkdown(formatVoteResult(summary, winner)))
+          }
+
+          voteStep = 'recuperando la partida para aplicar consecuencias'
+          const game = await storage.getGame(scope)
+          if (!game || game.phase !== 'adventure') return
+
+          voteStep = 'pidiendo consecuencias a Claude'
+          let reply
+          try {
+            reply = await callClaude(game, `El grupo ha decidido por votacion: "${winner}". Narra las consecuencias.`)
+          } catch (error) {
+            if (channel && typeof channel.send === 'function') {
+              await channel.send(`Error con Claude: \`${error.message}\``).catch(() => {})
+            }
+            return
+          }
+
+          voteStep = 'procesando la respuesta del director de juego'
+          await adventureHandlers.handleDmReply(scope, game, reply, interaction.inGuild())
+
+          voteStep = 'guardando la partida tras la votacion'
+          await storage.saveGame(scope, game)
+          storage.setCachedGame(scope, game)
+        } catch (error) {
+          logDiscordInteractionError(`Error en votacion de Discord durante: ${voteStep}`, interaction, error, logError)
+
+          const detailedMessage = `Error en la votacion durante "${voteStep}": ${error.message}`
+          if (interaction.deferred || interaction.replied) {
+            await interaction.followUp({
+              content: detailedMessage,
+              ephemeral: true,
+            }).catch(() => {})
+          } else {
+            await interaction.reply({
+              content: detailedMessage,
+              ephemeral: true,
+            }).catch(() => {})
+          }
+        }
         return
       }
 
@@ -818,12 +991,18 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
             userId: interaction.user.id,
             username: interaction.user.globalName || interaction.user.username,
             startedAt: new Date().toISOString(),
+            selectedRace: game.setupBuffer?.pendingPlayer?.userId === interaction.user.id ? game.setupBuffer.pendingPlayer.selectedRace || null : null,
+            selectedClass: game.setupBuffer?.pendingPlayer?.userId === interaction.user.id ? game.setupBuffer.pendingPlayer.selectedClass || null : null,
           },
         }
         await storage.saveGame(scope, game)
         storage.setCachedGame(scope, game)
 
-        await interaction.showModal(buildJoinModal())
+        await interaction.reply({
+          content: buildJoinSelectionContent(game.setupBuffer.pendingPlayer),
+          components: buildJoinSelectionComponents(game.setupBuffer.pendingPlayer),
+          ephemeral: true,
+        })
         return
       }
 

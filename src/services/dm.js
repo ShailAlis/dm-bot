@@ -2,40 +2,46 @@ const Anthropic = require('@anthropic-ai/sdk')
 const EEEG = require('../../eeeg')
 const { PROFICIENCY_BONUS, getLevelFromXP, getNewAbilities, hpGainOnLevelUp, getModifier } = require('../game/rules')
 const { roll } = require('../game/player')
+const { logErrorWithContext } = require('../core/errors')
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 function generateWorldContext() {
-  const location = EEEG.generateLocation()
-  return {
-    town: location.town,
-    tavern: location.tavern,
-    npc: EEEG.generateNPC(),
-    hook: EEEG.generatePlotHook(),
-    encounter: EEEG.generateEncounter(),
-    curiosity: EEEG.generateCuriosity(),
-    rumor: EEEG.generateRumor(),
-    extraContext: {
-      faction: location.faction,
-      mystery: location.mystery,
-      shop: location.shop,
-      district: location.town.district,
-      powerStructure: location.town.powerStructure,
-      hiddenConflict: location.town.hiddenConflict,
-      localLawOrTaboo: location.town.localLawOrTaboo,
-      worldFrame: location.town.worldFrame,
-      regionalPressure: location.town.regionalPressure,
-      identity: location.town.identity,
-      condition: location.town.condition,
-      oddity: location.town.oddity,
-      superstition: location.town.superstition,
-      prosperity: location.town.prosperity,
-      industry: location.town.industry,
-      authority: location.town.authority,
-      architecture: location.town.architecture,
-      weather: location.town.weather,
-      omen: location.town.omen,
-    },
+  try {
+    const location = EEEG.generateLocation()
+    return {
+      town: location?.town || {},
+      tavern: location?.tavern || {},
+      npc: EEEG.generateNPC(),
+      hook: EEEG.generatePlotHook(),
+      encounter: EEEG.generateEncounter(),
+      curiosity: EEEG.generateCuriosity(),
+      rumor: EEEG.generateRumor(),
+      extraContext: {
+        faction: location?.faction || null,
+        mystery: location?.mystery || null,
+        shop: location?.shop || null,
+        district: location?.town?.district || null,
+        powerStructure: location?.town?.powerStructure || '',
+        hiddenConflict: location?.town?.hiddenConflict || '',
+        localLawOrTaboo: location?.town?.localLawOrTaboo || '',
+        worldFrame: location?.town?.worldFrame || '',
+        regionalPressure: location?.town?.regionalPressure || '',
+        identity: location?.town?.identity || '',
+        condition: location?.town?.condition || '',
+        oddity: location?.town?.oddity || '',
+        superstition: location?.town?.superstition || '',
+        prosperity: location?.town?.prosperity || '',
+        industry: location?.town?.industry || '',
+        authority: location?.town?.authority || '',
+        architecture: location?.town?.architecture || '',
+        weather: location?.town?.weather || '',
+        omen: location?.town?.omen || '',
+      },
+    }
+  } catch (error) {
+    logErrorWithContext('Error generando el contexto del mundo.', error)
+    throw error
   }
 }
 
@@ -184,7 +190,13 @@ async function callClaude(game, userMessage, systemOverride) {
     system,
     messages,
   })
-  const text = response.content.map((block) => block.text || '').join('')
+  const text = Array.isArray(response?.content)
+    ? response.content.map((block) => block.text || '').join('').trim()
+    : ''
+
+  if (!text) {
+    throw new Error('Claude no devolvio contenido util.')
+  }
 
   game.history.push({ role: 'user', content: userMessage })
   game.history.push({ role: 'assistant', content: text })
@@ -254,7 +266,7 @@ function getStatKeyFromRollType(rollType) {
 }
 
 async function parseDMCommands(chatId, game, text, storage) {
-  let clean = text
+  let clean = String(text || '')
   const rolls = []
   const levelUps = []
   const voteData = { active: false, question: '', options: [] }

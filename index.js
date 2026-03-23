@@ -41,10 +41,19 @@ const {
 const { computeVoteOutcome } = require('./src/core/voting')
 const { createAdventureHandlers } = require('./src/core/adventure')
 const { hasDiscordEnv, startDiscordBot } = require('./src/platform/discord/bot')
+const { logErrorWithContext } = require('./src/core/errors')
 
 const REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'DATABASE_URL', 'ANTHROPIC_API_KEY']
 
 const bot = new TelegramBot(process.env.TELEGRAM_TOKEN, { polling: true })
+
+process.on('unhandledRejection', (reason) => {
+  logErrorWithContext('Promesa no controlada en el proceso principal.', reason)
+})
+
+process.on('uncaughtExceptionMonitor', (error) => {
+  logErrorWithContext('Excepcion no capturada observada en el proceso principal.', error)
+})
 
 function requireEnv(name) {
   return typeof process.env[name] === 'string' && process.env[name].trim().length > 0
@@ -124,34 +133,39 @@ async function promptForCurrentPlayer(chatId, game, groupChat = false, fallbackT
 }
 
 async function beginNewGame(msg) {
-  const chatId = msg.chat.id
-  const game = storage.createEmptyGame()
+  try {
+    const chatId = msg.chat.id
+    const game = storage.createEmptyGame()
 
-  game.phase = 'setup'
-  game.history = []
-  game.setupSubStep = 'num_players'
+    game.phase = 'setup'
+    game.history = []
+    game.setupSubStep = 'num_players'
 
-  await storage.resetGame(chatId)
-  storage.clearCachedGame(chatId)
+    await storage.resetGame(chatId)
+    storage.clearCachedGame(chatId)
 
-  await saveAndCacheGame(chatId, game)
+    await saveAndCacheGame(chatId, game)
 
-  if (isPrivateChat(msg.chat)) {
+    if (isPrivateChat(msg.chat)) {
+      await sendWithActions(
+        bot,
+        chatId,
+        '*Nueva partida creada*\n\nElige cuantos personajes quieres crear en esta partida.',
+        PLAYER_COUNT_ACTIONS,
+      )
+      return
+    }
+
     await sendWithActions(
       bot,
       chatId,
-      '*Nueva partida creada*\n\nElige cuantos personajes quieres crear en esta partida.',
+      '*Nueva partida creada*\n\nElige cuantos jugadores participaran. Despues, quien haya lanzado /nueva empezara con el primer personaje y el resto podra usar /unirse.',
       PLAYER_COUNT_ACTIONS,
     )
-    return
+  } catch (error) {
+    logErrorWithContext('Error iniciando una nueva partida en Telegram.', error, { chatId: msg?.chat?.id })
+    await safeSend(bot, msg.chat.id, 'No se pudo crear la nueva partida. Intentalo de nuevo en unos segundos.')
   }
-
-  await sendWithActions(
-    bot,
-    chatId,
-    '*Nueva partida creada*\n\nElige cuantos jugadores participaran. Despues, quien haya lanzado /nueva empezara con el primer personaje y el resto podra usar /unirse.',
-    PLAYER_COUNT_ACTIONS,
-  )
 }
 
 async function handleSetup(chatId, game, userText, fromUserId = null, fromUsername = null, groupChat = false, replyToMessageId = null) {
