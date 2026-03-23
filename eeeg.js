@@ -407,6 +407,242 @@ const data = {
 
 }
 
+Object.assign(data, {
+  worldFrames: [
+    'una frontera tras una guerra reciente',
+    'los restos útiles de un imperio colapsado',
+    'una region prospera sostenida por un recurso escaso',
+    'una tierra sagrada disputada por varias fes',
+    'una ruta comercial rota o desviada',
+    'un territorio aparentemente normal asentado sobre ruinas antiguas',
+    'una zona inestable desde la desaparicion de una autoridad clave',
+  ],
+
+  regionalPressures: [
+    'una ola de refugiados que trae hambre, mano de obra y viejos enemigos',
+    'una enfermedad de origen incierto que nadie se atreve a nombrar en voz alta',
+    'impuestos abusivos y reclutamientos forzosos para una guerra lejana',
+    'monstruos desplazados de su habitat por excavaciones o incendios',
+    'caravanas que llegan tarde, vacias o no llegan en absoluto',
+    'la visita prolongada de un inquisidor, embajador o noble molesto',
+    'senales celestes, presagios religiosos y clima anomalo',
+  ],
+
+  settlementIdentities: [
+    'un pueblo con un secreto oscuro demasiado compartido para seguir siendo secreto',
+    'una villa de fachada amable y costumbres inquietantes',
+    'un boomtown reciente levantado por mina, santuario o ruta comercial',
+    'un asentamiento ocupado por una fuerza externa que finge ser invitada',
+    'un enclave fronterizo que vive de escoltas, contrabando y nervios',
+    'un lugar definido por una reliquia, festival o gremio demasiado influyente',
+    'una comunidad que convive con una amenaza debajo de sus propias calles',
+  ],
+
+  powerStructures: [
+    'un alcalde debil con una guardia demasiado fuerte',
+    'un templo dominante y un noble puramente decorativo',
+    'dos gremios poderosos en guerra fria constante',
+    'un consejo de familias rivales incapaz de parecer unido',
+    'una milicia popular enfrentada a la autoridad legal',
+    'una red criminal con fachada legitima y mucha clientela',
+    'una sociedad discreta incrustada en las instituciones locales',
+  ],
+
+  localLaws: [
+    'esta prohibido abrir negocio nuevo sin permiso de tres firmas concretas',
+    'ningun extranjero puede permanecer armado dentro de la plaza principal',
+    'las campanas del anochecer obligan a cerrar puertas y tabernas',
+    'los entierros deben hacerse antes de la siguiente puesta de sol',
+    'esta mal visto, y casi penado, preguntar por ciertas ruinas',
+    'nadie puede comprar sal en grandes cantidades sin dar explicaciones',
+    'los nombres de ciertos muertos no deben pronunciarse en publico',
+  ],
+
+  hiddenConflicts: [
+    'alguien intenta despertar algo antiguo bajo el asentamiento',
+    'una faccion local protege a un monstruo porque les resulta util',
+    'la reliquia principal es falsa, robada o peligrosa',
+    'la autoridad visible es un titere y todo el mundo importante lo sospecha',
+    'los desaparecidos no estan muertos, pero casi nadie preferiria saber la verdad',
+    'una vieja promesa mantiene la paz solo porque aun se paga un precio secreto',
+    'el enemigo real ya esta infiltrado entre guardia, clero o comercio',
+  ],
+
+  districtTypes: [
+    'el barrio del mercado',
+    'los muelles',
+    'la colina vieja',
+    'el barrio del templo',
+    'las huertas exteriores',
+    'la calle de los artesanos',
+    'la plaza del ganado',
+    'las casas altas',
+    'el anillo de murallas',
+    'las casuchas junto al arroyo',
+  ],
+
+  districtTraits: [
+    'siempre huele a brea, cebolla y noticias peligrosas',
+    'sus vecinos se conocen por nombre y por deuda',
+    'las puertas tienen dos cerraduras y las ventanas ninguna',
+    'las paredes conservan marcas de una revuelta antigua',
+    'hay mas ojos tras las cortinas que clientes en la calle',
+    'nadie camina deprisa excepto quien tiene muy buenas razones',
+    'todo parece provisional salvo los resentimientos',
+    'cada esquina tiene un uso distinto de dia y de noche',
+  ],
+
+  pointOfInterestTypes: [
+    'una capilla menor con un rito extraño',
+    'un molino con acceso oculto al subsuelo',
+    'unos baños publicos donde se oye demasiado',
+    'un puente viejo con peaje no oficial',
+    'un cementerio activo por razones no obvias',
+    'una torre semiderruida integrada en viviendas recientes',
+    'un mercado negro disfrazado de feria legal',
+    'una cantera, pozo o almazara con actividad sospechosa',
+  ],
+
+  factionTypes: [
+    'gremio comercial',
+    'cofradia religiosa',
+    'sociedad discreta',
+    'milicia ciudadana',
+    'banda criminal refinada',
+    'casa noble menor',
+    'orden de estudiosos',
+    'compañia mercenaria',
+  ],
+
+  factionGoals: [
+    'controlar una ruta, recurso o reliquia',
+    'capturar un cargo publico sin parecer ambicioso',
+    'silenciar un secreto historico muy comprometedor',
+    'reclutar discretamente antes de un conflicto mayor',
+    'provocar un incidente que justifique intervenir',
+    'impedir una excavacion o la apertura de un lugar sellado',
+    'monopolizar seguridad, cura o provisiones basicas',
+  ],
+
+  factionMethods: [
+    'sobornos calculados y favores imposibles de devolver',
+    'chantaje basado en secretos domesticos',
+    'violencia selectiva y bien ejemplificada',
+    'rumores sembrados como si fueran sentido comun',
+    'caridad interesada y muy visible',
+    'agentes incrustados en oficios humildes',
+    'contratos redactados para atrapar al desesperado',
+  ],
+
+  factionResources: [
+    'un almacen oculto de bienes incautados',
+    'escribas capaces de falsear registros',
+    'guardias fuera de servicio con hambre de dinero',
+    'acceso a tuneles o almacenes olvidados',
+    'niños mensajeros que nadie toma en serio',
+    'dinero extranjero de origen comprometedor',
+    'un informador dentro de la casa adecuada',
+  ],
+
+  weather: [
+    'una llovizna fria que parece no terminar nunca',
+    'niebla espesa que vuelve cercanas las campanas y lejanos los gritos',
+    'viento seco cargado de polvo y hojas muertas',
+    'bochorno pesado, casi de tormenta, aunque no cae una gota',
+    'copos lentos y silenciosos que amortiguan hasta los pasos de la guardia',
+    'nubes bajas que ocultan incluso las torres mas altas',
+  ],
+
+  omens: [
+    'tres cuervos posados mirando todos hacia la misma casa',
+    'campanas que suenan sin mano visible',
+    'perros que rehusan cruzar cierto cruce al caer la tarde',
+    'huellas mojadas donde el suelo sigue seco',
+    'un zumbido grave que desaparece cuando alguien intenta señalarlo',
+    'un enjambre de polillas golpeando solo una puerta concreta',
+  ],
+
+  npcGoals: [
+    'abandonar este lugar antes de que ocurra algo peor',
+    'recuperar algo robado sin levantar sospechas',
+    'mantener con vida a su familia una semana mas',
+    'vengarse de alguien con mas poder del prudente',
+    'limpiar su nombre sin exponer su mayor pecado',
+    'descubrir que hay tras una puerta, tumba o libro sellado',
+  ],
+
+  npcFears: [
+    'ser reconocido por alguien de su pasado',
+    'que registren su casa o negocio',
+    'quedarse a solas despues del anochecer',
+    'la proxima luna nueva',
+    'que alguien interprete bien sus mentiras',
+    'deber favores a la gente equivocada',
+  ],
+
+  tavernClientele: [
+    'barqueros agotados, tratantes con barro en las botas y curiosos sin oficio claro',
+    'campesinos desconfiados, dos guardias fuera de turno y una mesa que nunca pierde a los dados',
+    'mercaderes de paso, escribanos que oyen demasiado y un par de espaldas muy anchas',
+    'viajeros que fingen cansancio y vecinos que fingen no reconocerlos',
+    'oficiales menores, tahures educados y buscavidas con hambre de oportunidad',
+  ],
+
+  tavernFunctions: [
+    'punto neutral entre facciones que se odian pero se necesitan',
+    'bolsa de trabajo improvisada para aventureros y mercenarios',
+    'nido de rumores, apuestas y negocios dudosos',
+    'tapadera de contrabando, espionaje o culto',
+    'centro social del pueblo durante cualquier crisis',
+    'lugar supuestamente seguro que deja de serlo con frecuencia',
+  ],
+
+  tavernHooks: [
+    'un deudor se esconde en una de las habitaciones y no piensa salir',
+    'esta noche hay una reunion clandestina en el sotano',
+    'un cliente habitual ha desaparecido y todos mienten al respecto',
+    'un barril o despensa presenta una propiedad anomala que conviene explicar rapido',
+    'un juego o competicion local esta a punto de convertirse en violencia real',
+    'alguien ha alquilado una habitacion con otro nombre y demasiada prisa',
+  ],
+
+  mysteryFrames: [
+    'una desaparicion ligada a un calendario o ritual',
+    'un asesinato con culpable aparente demasiado obvio',
+    'un monstruo visible cuya causa real es completamente humana',
+    'un robo sacrilego que nadie quiere denunciar en publico',
+    'una enfermedad, locura o transformacion con vector oculto',
+    'una conspiracion comercial disfrazada de maldicion',
+  ],
+
+  clueTypes: [
+    'una evidencia fisica fuera de lugar',
+    'un testimonio contradictorio pero sincero',
+    'un registro religioso, comercial o judicial manipulado',
+    'un simbolo, cancion o supersticion que encubre un hecho',
+    'un rastro logistico de comida, madera, telas o monedas',
+    'un comportamiento extraño en animales o niños',
+  ],
+
+  encounterObjectives: [
+    'proteger a alguien mientras escapa',
+    'convencer a dos bandos de que no se maten todavia',
+    'impedir un ritual antes de que termine',
+    'cruzar terreno hostil con informacion que no puede perderse',
+    'rescatar a un cautivo sin alertar a media region',
+    'exponer a un impostor antes de que cambie de rostro o de puesto',
+  ],
+
+  encounterComplications: [
+    'el terreno es estrecho, vertical o se viene abajo',
+    'hay civiles en medio y nadie quiere admitirlo',
+    'fuego, humo o agua convierten todo en un reloj',
+    'el enemigo quiere algo distinto a matar',
+    'aparece un tercer actor en el peor momento',
+    'la recompensa moral es peor que el peligro fisico',
+  ],
+})
+
 // ── GENERADORES ───────────────────────────────────────────────
 
 const EEEG = {
@@ -416,27 +652,113 @@ const EEEG = {
     const prefix = r(data.townNames.prefix)
     const suffix = r(data.townNames.suffix)
     const name = `${prefix.charAt(0).toUpperCase() + prefix.slice(1)}${suffix}`
+    const type = r(data.townTypes)
+    const populationBase = {
+      aldea: dice(2, 70) + 40,
+      pueblo: dice(3, 90) + 120,
+      villa: dice(4, 120) + 260,
+      ciudad: dice(6, 220) + 1200,
+      asentamiento: dice(3, 80) + 80,
+      enclave: dice(3, 100) + 90,
+      bastion: dice(3, 110) + 140,
+      fortaleza: dice(3, 120) + 180,
+      puerto: dice(4, 140) + 300,
+      mercado: dice(4, 130) + 220,
+    }
+    const population = populationBase[type] || (dice(3, 200) + 50)
+    const prosperity = r(data.townProsperity)
+    const industry = r(data.townIndustries)
+    const authority = r(data.townAuthorities)
+    const event = r(data.townEvents)
+    const landmark = r(data.townLandmarks)
+    const architecture = r(data.townArchitecture)
+    const tension = r(data.townTensions)
+    const condition = r(data.townConditions)
+    const oddity = r(data.townOddities)
+    const superstition = r(data.townSuperstitions)
+    const worldFrame = r(data.worldFrames)
+    const regionalPressure = r(data.regionalPressures)
+    const identity = r(data.settlementIdentities)
+    const powerStructure = r(data.powerStructures)
+    const localLawOrTaboo = r(data.localLaws)
+    const hiddenConflict = r(data.hiddenConflicts)
+    const district = { name: r(data.districtTypes), trait: r(data.districtTraits) }
+    const pointOfInterest = r(data.pointOfInterestTypes)
+    const weather = r(data.weather)
+    const omen = r(data.omens)
+
     return {
       name,
-      type: r(data.townTypes),
-      population: dice(3, 200) + 50,
-      event: r(data.townEvents),
-      landmark: r(data.townLandmarks),
-      summary: `${name} es un ${r(data.townTypes)} de unos ${dice(3,200)+50} habitantes. Su punto de referencia más conocido es ${r(data.townLandmarks)}. Actualmente ${r(data.townEvents)}.`
+      type,
+      population,
+      prosperity,
+      industry,
+      authority,
+      architecture,
+      event,
+      tension,
+      condition,
+      oddity,
+      superstition,
+      worldFrame,
+      regionalPressure,
+      identity,
+      powerStructure,
+      localLawOrTaboo,
+      hiddenConflict,
+      district,
+      pointOfInterest,
+      weather,
+      omen,
+      landmark,
+      summary: `${name} es un ${type} ${prosperity} de unos ${population} habitantes. Vive de ${industry}, responde a ${authority} y se reconoce por ${landmark}. Su arquitectura muestra ${architecture}, mientras ${event}. Bajo la superficie, ${hiddenConflict}.`
+    }
+  },
+
+  generateFaction () {
+    const type = r(data.factionTypes)
+    const goal = r(data.factionGoals)
+    const method = r(data.factionMethods)
+    const resource = r(data.factionResources)
+    return {
+      type,
+      goal,
+      method,
+      resource,
+      summary: `${type.charAt(0).toUpperCase() + type.slice(1)} centrado en ${goal}. Suele actuar mediante ${method} y cuenta con ${resource}.`
+    }
+  },
+
+  generateMystery () {
+    const frame = r(data.mysteryFrames)
+    const clues = pickMany(data.clueTypes, 3)
+    return {
+      frame,
+      clues,
+      summary: `${frame}. Pistas iniciales: ${clues.join(', ')}.`
     }
   },
 
   // Genera un NPC secundario completo
   generateNPC (profession = null) {
     const professions = ['herrero','comerciante','granjero','guardia','tabernero','ladrón','mendigo','viajero','mercader','monje','pescador','cazador','escriba','curandero','mensajero']
+    const physicalTrait = r(data.npcPhysicalTraits)
+    const mood = r(data.npcMoods)
+    const pocket = r(data.npcPockets)
+    const secret = r(data.npcSecrets)
+    const idle = r(data.npcIdleActions)
+    const goal = r(data.npcGoals)
+    const fear = r(data.npcFears)
     return {
-      mood: r(data.npcMoods),
-      physicalTrait: r(data.npcPhysicalTraits),
-      pocket: r(data.npcPockets),
-      secret: r(data.npcSecrets),
-      idle: r(data.npcIdleActions),
+      mood,
+      physicalTrait,
+      pocket,
+      secret,
+      idle,
+      goal,
+      fear,
       profession: profession || r(professions),
-      summary: `Tiene ${r(data.npcPhysicalTraits)} y parece estar ${r(data.npcMoods)}. Cuando crees que no le miras, ${r(data.npcIdleActions)}.`
+      summary: `Tiene ${physicalTrait} y parece estar ${mood}. Cuando crees que no le miras, está ${idle}. Quiere ${goal}, pero teme ${fear}.`
     }
   },
 
@@ -446,14 +768,23 @@ const EEEG = {
     const wealthLabel = { cheap: 'humilde', average: 'corriente', wealthy: 'próspera' }
     const name = `${r(data.tavernNamePrefixes)} ${r(data.tavernNameNouns)}`
     const brew = r(data.tavernSpecialBrews)
+    const feature = r(data.tavernFeatures[wealthTier])
+    const rumor = r(data.tavernRumors)
+    const event = r(data.tavernEvents)
+    const clientele = r(data.tavernClientele)
+    const functionInTown = r(data.tavernFunctions)
+    const hook = r(data.tavernHooks)
     return {
       name,
       wealth: wealthLabel[wealthTier],
-      feature: r(data.tavernFeatures[wealthTier]),
-      rumor: r(data.tavernRumors),
-      event: r(data.tavernEvents),
+      feature,
+      rumor,
+      event,
+      clientele,
+      functionInTown,
+      hook,
       specialBrew: brew,
-      summary: `La taberna se llama "${name}", un local ${wealthLabel[wealthTier]}. Lo primero que notas al entrar es que ${r(data.tavernFeatures[wealthTier])}. La bebida especial de la casa es "${brew.name}": ${brew.desc} Se rumorea que ${r(data.tavernRumors)}.`
+      summary: `La taberna se llama "${name}", un local ${wealthLabel[wealthTier]}. Lo primero que notas al entrar es que ${feature}. Suele funcionar como ${functionInTown}, con clientela formada por ${clientele}. La bebida especial de la casa es "${brew.name}": ${brew.desc} Se rumorea que ${rumor}, y ahora mismo ${hook}.`
     }
   },
 
@@ -475,9 +806,13 @@ const EEEG = {
   // Genera un gancho de misión
   generatePlotHook () {
     const hook = r(data.plotHooks)
+    const objective = r(data.encounterObjectives)
+    const complication = r(data.encounterComplications)
     return {
       ...hook,
-      summary: `**${hook.summary}**: ${hook.desc}`
+      objective,
+      complication,
+      summary: `**${hook.summary}**: ${hook.desc} Objetivo probable: ${objective}. Complicacion inicial: ${complication}.`
     }
   },
 
@@ -485,9 +820,14 @@ const EEEG = {
   generateEncounter (biome = null) {
     const biomes = Object.keys(data.encounters)
     const b = biome && data.encounters[biome] ? biome : r(biomes)
+    const objective = r(data.encounterObjectives)
+    const complication = r(data.encounterComplications)
     return {
       biome: b,
-      description: r(data.encounters[b])
+      description: r(data.encounters[b]),
+      objective,
+      complication,
+      summary: `Encuentro en ${b}: ${r(data.encounters[b])}. Objetivo dramático: ${objective}. Complicacion: ${complication}.`
     }
   },
 
@@ -511,23 +851,42 @@ const EEEG = {
     const town = this.generateTown()
     const tavern = this.generateTavern()
     const shop = this.generateBuilding()
+    const faction = this.generateFaction()
+    const mystery = this.generateMystery()
     return {
       town,
       tavern,
       shop,
+      faction,
+      mystery,
       summary: `
 📍 **${town.name}** — ${town.type} de unos ${town.population} habitantes.
 🏛️ Landmark: ${town.landmark}
 📢 Evento actual: ${town.event}
+⚖️ Poder local: ${town.powerStructure}
+⚠️ Tensión actual: ${town.tension}
+🕯️ Tabú local: ${town.localLawOrTaboo}
+🌦️ Clima del momento: ${town.weather}
+🔮 Presagio: ${town.omen}
+🏘️ Distrito notable: ${town.district.name}, donde ${town.district.trait}
+🗝️ Punto de interés: ${town.pointOfInterest}
 
 🍺 **Taberna: ${tavern.name}** (${tavern.wealth})
 Lo primero que notas: ${tavern.feature}
 Rumor local: ${tavern.rumor}
 Bebida especial: "${tavern.specialBrew.name}" — ${tavern.specialBrew.desc}
+Función social: ${tavern.functionInTown}
+Gancho de taberna: ${tavern.hook}
 
 🏪 **${shop.typeName.charAt(0).toUpperCase() + shop.typeName.slice(1)}**
 Característica: ${shop.notableFeature}
 Especialidad: ${shop.specialty}
+
+🜂 **Facción en juego**
+${faction.summary}
+
+🧩 **Misterio latente**
+${mystery.summary}
       `.trim()
     }
   },
@@ -538,17 +897,21 @@ Especialidad: ${shop.specialty}
     const hook = this.generatePlotHook()
     const npc = this.generateNPC()
     const rumor = this.generateRumor()
+    const encounter = this.generateEncounter()
     return {
       location,
       hook,
       npc,
       rumor,
+      encounter,
       summary: `
 ${location.summary}
 
 🎭 **NPC notable**: ${npc.summary} Lleva en los bolsillos: ${npc.pocket}. Su secreto: ${npc.secret}.
 
 📋 **Gancho de aventura**: ${hook.summary}
+
+⚔️ **Encuentro posible**: ${encounter.description}
 
 💬 **Rumor que circula**: ${rumor}
       `.trim()
