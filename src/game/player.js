@@ -37,7 +37,7 @@ function roll(sides) {
 }
 
 function generateStats(playerClass) {
-  const scores = [15, 14, 13, 12, 10, 8]
+  const scores = [16, 15, 13, 11, 10, 8]
   const preferredOrder = STAT_PRIORITY[normalizeClassKey(playerClass)] || STAT_KEYS
   const order = [
     ...preferredOrder.filter((key) => STAT_KEYS.includes(key)),
