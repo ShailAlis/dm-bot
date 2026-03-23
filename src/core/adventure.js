@@ -57,7 +57,9 @@ function createAdventureHandlers({
       clearPendingPlayer(game)
 
       try {
-        game.worldContext = generateWorldContext()
+        if (!game.worldContext) {
+          game.worldContext = generateWorldContext()
+        }
         await saveWorldContext(scopeId, game.worldContext)
       } catch (error) {
         logError('No se pudo generar o guardar el contexto del mundo:', error)

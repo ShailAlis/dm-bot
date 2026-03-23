@@ -82,13 +82,35 @@ function slugifyThreadPart(value) {
     .slice(0, 40) || 'aventura'
 }
 
-function buildThreadName(interaction) {
-  const base = slugifyThreadPart(interaction.guild?.name || interaction.channel?.name || 'aventura')
-  const stamp = new Date().toISOString().slice(11, 16).replace(':', '')
-  return `partida-${base}-${stamp}`
+function cleanAdventureTitle(value) {
+  return String(value || '')
+    .replace(/[*_`~]/g, '')
+    .replace(/[|:#]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-async function ensureAdventureThread(interaction) {
+function buildAdventureTitle(worldContext = null) {
+  const townName = worldContext?.town?.name || 'Ravenhollow'
+  const hookName = cleanAdventureTitle(worldContext?.hook?.summary || 'El eco olvidado')
+  const templates = [
+    `Las sombras de ${townName}`,
+    `El secreto de ${townName}`,
+    `Ecos sobre ${townName}`,
+    `La noche de ${townName}`,
+    `${hookName} en ${townName}`,
+  ]
+
+  return cleanAdventureTitle(templates[Math.floor(Math.random() * templates.length)]).slice(0, 90)
+}
+
+function buildThreadName(interaction, adventureTitle = null, suffix = '') {
+  const title = cleanAdventureTitle(adventureTitle || buildAdventureTitle())
+  const fullTitle = suffix ? `${title} - ${suffix}` : title
+  return fullTitle.slice(0, 100)
+}
+
+async function ensureAdventureThread(interaction, adventureTitle = null) {
   const channel = interaction.channel
   const isThread = typeof channel?.isThread === 'function' && channel.isThread()
 
@@ -102,7 +124,7 @@ async function ensureAdventureThread(interaction) {
 
   try {
     const thread = await channel.threads.create({
-      name: buildThreadName(interaction),
+      name: buildThreadName(interaction, adventureTitle),
       autoArchiveDuration: 1440,
       reason: `Nueva partida creada por ${interaction.user.tag}`,
     })
@@ -279,8 +301,9 @@ async function createPrivateAdventureThread(interaction, game, logError = consol
   }
 
   try {
+    const adventureTitle = game?.setupBuffer?.adventureTitle || buildAdventureTitle(game?.worldContext)
     const privateThread = await parentChannel.threads.create({
-      name: `${buildThreadName(interaction)}-mesa`,
+      name: buildThreadName(interaction, adventureTitle, 'mesa'),
       autoArchiveDuration: 1440,
       type: ChannelType.PrivateThread,
       invitable: false,
@@ -684,13 +707,17 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
       if (interaction.commandName === 'nueva') {
         const numPlayers = interaction.options.getInteger('jugadores', true)
-        const { channel: targetChannel, created: createdThread, usedFallback } = await ensureAdventureThread(interaction)
-        const targetScope = getDiscordScopeFromChannel(targetChannel)
         const game = storage.createEmptyGame()
+        const worldContext = generateWorldContext()
+        const adventureTitle = buildAdventureTitle(worldContext)
+        const { channel: targetChannel, created: createdThread, usedFallback } = await ensureAdventureThread(interaction, adventureTitle)
+        const targetScope = getDiscordScopeFromChannel(targetChannel)
 
         game.phase = 'setup'
         game.numPlayers = numPlayers
         game.setupSubStep = 'name'
+        game.worldContext = worldContext
+        game.setupBuffer = { ...game.setupBuffer, adventureTitle }
         game.scope = targetScope
 
         await storage.resetGame(targetScope)
@@ -700,13 +727,14 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
         if (interaction.inGuild() && targetChannel.id !== interaction.channelId) {
           await interaction.reply({
-            content: `Partida creada en <#${targetChannel.id}> para ${numPlayers} jugador(es). Usa ese hilo para /unirse y jugar esta aventura.`,
+            content: `**${adventureTitle}** creada en <#${targetChannel.id}> para ${numPlayers} jugador(es). Usa ese hilo para /unirse y jugar esta aventura.`,
             ephemeral: true,
           })
 
           if (typeof targetChannel.send === 'function') {
             await targetChannel.send([
-              `**Nueva partida creada** para **${numPlayers}** jugador(es).`,
+              `**${adventureTitle}**`,
+              `Nueva partida creada para **${numPlayers}** jugador(es).`,
               'Este hilo sera el espacio de esta aventura.',
               'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
             ].join('\n'))
@@ -716,6 +744,7 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
         await interaction.reply({
           content: [
+            `**${adventureTitle}**`,
             `Partida de Discord creada para **${numPlayers}** jugador(es).`,
             usedFallback
               ? 'No pude crear un hilo nuevo, asi que esta aventura usara el canal actual como scope.'
