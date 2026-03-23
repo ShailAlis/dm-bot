@@ -3,8 +3,25 @@
 //  Importar en index.js con: const EEEG = require('./eeeg')
 // ============================================================
 
-const r = arr => arr[Math.floor(Math.random() * arr.length)]
+const r = (arr, fallback = 'desconocido') => {
+  if (!Array.isArray(arr) || arr.length === 0) return fallback
+  return arr[Math.floor(Math.random() * arr.length)]
+}
 const dice = (n, sides) => Array.from({length: n}, () => Math.floor(Math.random() * sides) + 1).reduce((a, b) => a + b, 0)
+const pickMany = (arr, count = 1) => {
+  if (!Array.isArray(arr) || arr.length === 0 || count <= 0) return []
+
+  const pool = [...arr]
+  const picks = []
+  const limit = Math.min(count, pool.length)
+
+  while (picks.length < limit) {
+    const index = Math.floor(Math.random() * pool.length)
+    picks.push(pool.splice(index, 1)[0])
+  }
+
+  return picks
+}
 
 // ── DATOS BASE ────────────────────────────────────────────────
 
@@ -408,6 +425,79 @@ const data = {
 }
 
 Object.assign(data, {
+  townProsperity: [
+    'pobre pero resistente',
+    'modesto y trabajador',
+    'prospero a simple vista',
+    'rico para su tamano',
+    'tenso por una riqueza reciente',
+    'decadente tras tiempos mejores',
+  ],
+
+  townIndustries: [
+    'agricultura y molinos',
+    'mineria y fundicion',
+    'pesca, salazones y barcazas',
+    'madera, carbon y caza',
+    'comercio de paso y peajes',
+    'ganado, curtidos y lana',
+    'peregrinacion, reliquias y servicios',
+  ],
+
+  townAuthorities: [
+    'un alcalde agotado',
+    'una guardia demasiado visible',
+    'un consejo local dividido',
+    'un templo con mas poder del debido',
+    'un noble distante pero temido',
+    'un gremio que decide mas de lo que admite',
+  ],
+
+  townArchitecture: [
+    'madera vieja reforzada con remiendos de piedra',
+    'muros encalados y tejados oscuros muy apretados',
+    'casas torcidas levantadas sobre ruinas anteriores',
+    'piedra humeda, soportales estrechos y ventanas pequenas',
+    'edificios recios pensados mas para aguantar que para gustar',
+    'mezcla improvisada de estilos traidos por viajeros y comercio',
+  ],
+
+  townTensions: [
+    'nadie confia del todo en sus vecinos',
+    'la guardia y la poblacion civil miden cada palabra',
+    'los forasteros son utiles, pero nunca bienvenidos',
+    'un conflicto viejo esta a punto de reabrirse',
+    'la prosperidad reciente tiene demasiados enemigos',
+    'todo parece tranquilo hasta que cae la noche',
+  ],
+
+  townConditions: [
+    'un pulso cotidiano agotado pero funcional',
+    'una calma rara, como si faltara algo importante',
+    'una actividad constante que esconde nervios',
+    'un ambiente receloso interrumpido por rumores',
+    'una rutina alterada por una crisis aun sin nombre',
+    'una normalidad teatral que nadie se termina de creer',
+  ],
+
+  townOddities: [
+    'muchas puertas muestran la misma marca de tiza',
+    'los vecinos evitan mirar hacia una misma calle al anochecer',
+    'hay demasiadas campanas para un lugar tan pequeno',
+    'las ventanas se cierran todas a la misma hora exacta',
+    'un olor persistente aparece y desaparece sin causa clara',
+    'todo el mundo conoce una cancion local que nadie quiere explicar',
+  ],
+
+  townSuperstitions: [
+    'no silbar despues del ultimo toque de campana',
+    'dejar sal en el umbral cuando falta alguien',
+    'no pronunciar ciertos nombres cerca del pozo',
+    'encender una vela extra si sueñas con agua negra',
+    'no abrir la puerta a la primera llamada nocturna',
+    'tocar hierro viejo antes de cruzar el barrio del templo',
+  ],
+
   worldFrames: [
     'una frontera tras una guerra reciente',
     'los restos útiles de un imperio colapsado',
