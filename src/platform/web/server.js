@@ -23,7 +23,7 @@ const MIME_TYPES = {
 }
 
 function shouldStartWebServer() {
-  return Boolean(process.env.PORT || process.env.WEB_PORT)
+  return !['1', 'true', 'si', 'yes'].includes(String(process.env.WEB_DISABLED || '').trim().toLowerCase())
 }
 
 function getWebPort() {

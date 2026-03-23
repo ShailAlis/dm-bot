@@ -18,8 +18,12 @@ function requireEnv(name) {
   return typeof process.env[name] === 'string' && process.env[name].trim().length > 0
 }
 
+function isDisabled(name) {
+  return ['1', 'true', 'si', 'yes'].includes(String(process.env[name] || '').trim().toLowerCase())
+}
+
 function hasWebEnv() {
-  return requireEnv('PORT') || requireEnv('WEB_PORT')
+  return !isDisabled('WEB_DISABLED')
 }
 
 function hasTelegramEnv() {
