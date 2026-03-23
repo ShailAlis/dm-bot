@@ -48,6 +48,9 @@ function buildDiscordCommands() {
       .setName('seguir')
       .setDescription('Fuerza a la IA a continuar la escena actual'),
     new SlashCommandBuilder()
+      .setName('donar')
+      .setDescription('Muestra formas de apoyar el proyecto'),
+    new SlashCommandBuilder()
       .setName('ayuda')
       .setDescription('Muestra el estado actual de la integracion de Discord'),
   ]

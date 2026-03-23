@@ -28,6 +28,7 @@ const {
   formatRoll,
 } = require('../../game/formatters')
 const { generateWorldContext, callClaude, parseDMCommands } = require('../../services/dm')
+const { buildDonationMessage, getDonationProviders } = require('../../services/donations')
 const { createAdventureHandlers } = require('../../core/adventure')
 const { clearPendingPlayer, resolveRaceValue, resolveClassValue } = require('../../core/setup')
 const { computeVoteOutcome } = require('../../core/voting')
@@ -68,6 +69,7 @@ function buildHelpMessage() {
     '/actuar texto:<...> - envia una accion narrativa al director de juego',
     '/continuar - recupera la aventura guardada en este scope',
     '/seguir - fuerza la continuacion de la escena actual',
+    '/donar - muestra enlaces para apoyar el proyecto',
     '/estado - muestra las fichas del grupo si ya existen',
     '/xp - muestra la experiencia del grupo',
     '/habilidades - muestra las habilidades desbloqueadas',
@@ -77,6 +79,19 @@ function buildHelpMessage() {
     '',
     'Esta beta ya crea partidas, personajes, escenas y progreso compartido en scopes de Discord.',
   ].join('\n')
+}
+
+function buildDonationButtonRows(providers) {
+  if (!Array.isArray(providers) || providers.length === 0) return []
+
+  return providers.map((provider) => (
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel(String(provider.label || 'Donar').slice(0, 80))
+        .setStyle(ButtonStyle.Link)
+        .setURL(provider.url),
+    )
+  ))
 }
 
 function slugifyThreadPart(value) {
@@ -1018,6 +1033,24 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
         await interaction.reply({
           content: toDiscordMarkdown(formatPartyStatus(game.players)),
+        })
+        return
+      }
+
+      if (interaction.commandName === 'donar') {
+        const providers = getDonationProviders()
+        if (providers.length === 0) {
+          await interaction.reply({
+            content: 'Todavia no he configurado enlaces de donacion. Cuando los tengas, este comando mostrara Stripe y PayPal.',
+            ephemeral: true,
+          })
+          return
+        }
+
+        await interaction.reply({
+          content: toDiscordMarkdown(buildDonationMessage()),
+          components: buildDonationButtonRows(providers),
+          ephemeral: true,
         })
         return
       }
