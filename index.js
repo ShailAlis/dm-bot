@@ -6,8 +6,6 @@ const { hasDiscordEnv, startDiscordBot } = require('./src/platform/discord/bot')
 const { startWebServer } = require('./src/platform/web/server')
 const { logErrorWithContext } = require('./src/core/errors')
 
-const REQUIRED_ENV_VARS = ['TELEGRAM_TOKEN', 'DATABASE_URL', 'ANTHROPIC_API_KEY']
-
 process.on('unhandledRejection', (reason) => {
   logErrorWithContext('Promesa no controlada en el proceso principal.', reason)
 })
@@ -20,8 +18,36 @@ function requireEnv(name) {
   return typeof process.env[name] === 'string' && process.env[name].trim().length > 0
 }
 
+function hasWebEnv() {
+  return requireEnv('PORT') || requireEnv('WEB_PORT')
+}
+
+function hasTelegramEnv() {
+  return requireEnv('TELEGRAM_TOKEN')
+}
+
 function validateEnv() {
-  const missing = REQUIRED_ENV_VARS.filter((name) => !requireEnv(name))
+  const wantsTelegram = hasTelegramEnv()
+  const wantsDiscord = hasDiscordEnv()
+  const wantsWeb = hasWebEnv()
+  const activePlatforms = [
+    wantsTelegram ? 'telegram' : null,
+    wantsDiscord ? 'discord' : null,
+    wantsWeb ? 'web' : null,
+  ].filter(Boolean)
+
+  if (activePlatforms.length === 0) {
+    throw new Error(
+      'No hay ninguna plataforma configurada para arrancar. Define TELEGRAM_TOKEN, o DISCORD_TOKEN + DISCORD_CLIENT_ID, o PORT/WEB_PORT.',
+    )
+  }
+
+  const requiredEnvVars = ['DATABASE_URL']
+  if (activePlatforms.some((platform) => ['telegram', 'discord', 'web'].includes(platform))) {
+    requiredEnvVars.push('ANTHROPIC_API_KEY')
+  }
+
+  const missing = requiredEnvVars.filter((name) => !requireEnv(name))
   if (missing.length > 0) {
     throw new Error(`Faltan variables de entorno requeridas: ${missing.join(', ')}`)
   }
@@ -30,8 +56,20 @@ function validateEnv() {
 async function bootstrap() {
   validateEnv()
   await storage.initDB()
-  await startTelegramBot({ storage })
-  startWebServer({ storage })
+
+  if (hasTelegramEnv()) {
+    await startTelegramBot({ storage })
+    console.log('Integracion de Telegram activada')
+  } else {
+    console.log('Integracion de Telegram desactivada (falta TELEGRAM_TOKEN)')
+  }
+
+  if (hasWebEnv()) {
+    startWebServer({ storage })
+    console.log('Integracion web activada')
+  } else {
+    console.log('Integracion web desactivada (falta PORT o WEB_PORT)')
+  }
 
   if (hasDiscordEnv()) {
     try {
