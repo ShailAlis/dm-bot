@@ -30,7 +30,7 @@ const { createAdventureHandlers } = require('../../core/adventure')
 const { clearPendingPlayer, resolveRaceValue, resolveClassValue } = require('../../core/setup')
 const { computeVoteOutcome } = require('../../core/voting')
 const { buildDiscordCommands } = require('./commands')
-const { getDiscordScopeFromInteraction } = require('./scope')
+const { getDiscordScopeFromChannel, getDiscordScopeFromInteraction } = require('./scope')
 
 const JOIN_MODAL_ID = 'discord_join_character'
 const VOTE_BUTTON_PREFIX = 'vote:'
@@ -55,7 +55,7 @@ function buildHelpMessage() {
     '**Discord beta**',
     '',
     'Comandos disponibles por ahora:',
-    '/nueva jugadores:<1-4> - prepara una nueva partida para este canal o hilo',
+    '/nueva jugadores:<1-4> - crea una nueva partida en un hilo propio',
     '/unirse - abre el formulario para crear tu personaje',
     '/actuar texto:<...> - envia una accion narrativa al director de juego',
     '/continuar - recupera la aventura guardada en este scope',
@@ -69,6 +69,41 @@ function buildHelpMessage() {
     '',
     'Esta beta ya crea partidas, personajes, escenas y progreso compartido en scopes de Discord.',
   ].join('\n')
+}
+
+function slugifyThreadPart(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'aventura'
+}
+
+function buildThreadName(interaction) {
+  const base = slugifyThreadPart(interaction.guild?.name || interaction.channel?.name || 'aventura')
+  const stamp = new Date().toISOString().slice(11, 16).replace(':', '')
+  return `partida-${base}-${stamp}`
+}
+
+async function ensureAdventureThread(interaction) {
+  const channel = interaction.channel
+  const isThread = typeof channel?.isThread === 'function' && channel.isThread()
+
+  if (!interaction.inGuild() || isThread) {
+    return channel
+  }
+
+  if (!channel?.threads || typeof channel.threads.create !== 'function') {
+    return channel
+  }
+
+  return channel.threads.create({
+    name: buildThreadName(interaction),
+    autoArchiveDuration: 1440,
+    reason: `Nueva partida creada por ${interaction.user.tag}`,
+  })
 }
 
 function toDiscordMarkdown(text) {
@@ -498,22 +533,40 @@ async function startDiscordBot({ storage, log = console.log, logError = console.
 
       if (interaction.commandName === 'nueva') {
         const numPlayers = interaction.options.getInteger('jugadores', true)
+        const targetChannel = await ensureAdventureThread(interaction)
+        const targetScope = getDiscordScopeFromChannel(targetChannel)
         const game = storage.createEmptyGame()
 
         game.phase = 'setup'
         game.numPlayers = numPlayers
         game.setupSubStep = 'name'
-        game.scope = scope
+        game.scope = targetScope
 
-        await storage.resetGame(scope)
-        storage.clearCachedGame(scope)
-        await storage.saveGame(scope, game)
-        storage.setCachedGame(scope, game)
+        await storage.resetGame(targetScope)
+        storage.clearCachedGame(targetScope)
+        await storage.saveGame(targetScope, game)
+        storage.setCachedGame(targetScope, game)
+
+        if (interaction.inGuild() && targetChannel.id !== interaction.channelId) {
+          await interaction.reply({
+            content: `Partida creada en <#${targetChannel.id}> para ${numPlayers} jugador(es). Usa ese hilo para /unirse y jugar esta aventura.`,
+            ephemeral: true,
+          })
+
+          if (typeof targetChannel.send === 'function') {
+            await targetChannel.send([
+              `**Nueva partida creada** para **${numPlayers}** jugador(es).`,
+              'Este hilo sera el espacio de esta aventura.',
+              'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
+            ].join('\n'))
+          }
+          return
+        }
 
         await interaction.reply({
           content: [
-            `Partida de Discord creada para *${numPlayers}* jugador(es).`,
-            'El adaptador ya usa un scope propio de Discord para este canal o hilo.',
+            `Partida de Discord creada para **${numPlayers}** jugador(es).`,
+            'Este hilo o canal sera el scope de la aventura.',
             'Ahora el primer jugador ya puede usar /unirse para crear su personaje.',
           ].join('\n'),
         })

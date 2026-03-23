@@ -4,7 +4,7 @@ function buildDiscordCommands() {
   return [
     new SlashCommandBuilder()
       .setName('nueva')
-      .setDescription('Inicia una nueva partida en este canal o hilo')
+      .setDescription('Inicia una nueva partida; crea un hilo si hace falta')
       .addIntegerOption((option) => (
         option
           .setName('jugadores')
