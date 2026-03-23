@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mesa Web | DM Bot</title>
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <link rel="stylesheet" href="./styles.css">
-  <script defer src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </head>
 <body>
   <div class="loading-overlay hidden" id="loading-overlay" aria-live="polite" aria-busy="true">
@@ -17,12 +17,27 @@
     </div>
   </div>
 
+  <header class="app-topbar">
+    <div class="brand-lockup">
+      <span class="brand-title">LAS AVENTURAS DEL TIO SHAIL</span>
+      <span class="brand-status">
+        <span class="status-dot"></span>
+        Mesa en vivo
+      </span>
+    </div>
+    <div class="topbar-actions">
+      <span class="topbar-pill topbar-pill-room" id="topbar-room-pill">Sin room activa</span>
+      <span class="topbar-pill">Aventura narrativa</span>
+      <span class="topbar-pill topbar-pill-accent">Web beta</span>
+    </div>
+  </header>
+
   <div class="page-shell">
     <section class="screen screen-active" id="screen-home">
       <div class="home-shell">
         <div class="home-copy">
-          <p class="eyebrow">DM Bot Web</p>
-          <h1>Una mesa narrativa para empezar una aventura o retomar una que ya existe.</h1>
+          <p class="eyebrow">Mesa digital</p>
+          <h1>Una sala de aventura persistente para crear una party o retomar una ya viva.</h1>
           <p class="lede">
             Crea una nueva room para preparar al grupo desde cero, o entra con un codigo si la aventura ya
             existe y quieres volver a ella.
@@ -147,11 +162,31 @@
           </div>
           <div class="header-meta">
             <span class="badge" id="room-phase-badge">Sin fase</span>
+            <button class="ghost-button" id="copy-room-button" type="button">Copiar codigo</button>
             <button class="ghost-button" id="room-home-button" type="button">Inicio</button>
           </div>
         </header>
 
         <div class="room-layout">
+          <aside class="room-rail stack">
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Mundo</p>
+                <h3>Contexto y memoria</h3>
+              </div>
+              <div class="stack" id="world-summary"></div>
+              <div class="stack" id="memory-list"></div>
+            </section>
+
+            <section class="card stack">
+              <div>
+                <p class="section-kicker">Cronica</p>
+                <h3>Ultimos hitos</h3>
+              </div>
+              <div class="timeline" id="chronicle-list"></div>
+            </section>
+          </aside>
+
           <main class="room-main stack">
             <section class="card stack">
               <div>
@@ -206,27 +241,32 @@
               </div>
               <div class="stack" id="room-player-list"></div>
             </section>
-
-            <section class="card stack">
-              <div>
-                <p class="section-kicker">Mundo</p>
-                <h3>Contexto y memoria</h3>
-              </div>
-              <div class="stack" id="world-summary"></div>
-              <div class="stack" id="memory-list"></div>
-            </section>
-
-            <section class="card stack">
-              <div>
-                <p class="section-kicker">Cronica</p>
-                <h3>Ultimos hitos</h3>
-              </div>
-              <div class="timeline" id="chronicle-list"></div>
-            </section>
           </aside>
         </div>
       </div>
     </section>
   </div>
+
+  <footer class="site-footer">
+    <div class="footer-block">
+      <p class="section-kicker">Proyecto</p>
+      <h3>DM Bot Tavern</h3>
+      <p class="footer-copy">
+        Director de juego narrativo para web, Telegram y Discord. Esta version web esta pensada como
+        una mesa persistente para retomar aventuras y jugar con tu grupo sin depender de una sola plataforma.
+      </p>
+    </div>
+    <div class="footer-block">
+      <p class="section-kicker">Apoyo</p>
+      <p class="footer-copy" id="footer-donation-copy">Las opciones de donacion apareceran aqui si estan configuradas.</p>
+      <div class="footer-links" id="footer-donation-links"></div>
+    </div>
+    <div class="footer-block">
+      <p class="section-kicker">Autoria</p>
+      <p class="footer-copy">
+        Disenado y desarrollado para sostener aventuras compartidas con una interfaz mas propia y mantenible.
+      </p>
+    </div>
+  </footer>
 </body>
 </html>
