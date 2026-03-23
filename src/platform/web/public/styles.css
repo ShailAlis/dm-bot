@@ -86,6 +86,51 @@ body {
   padding: 1.6rem;
 }
 
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1.15rem 0 1rem;
+}
+
+.hero-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.step-chip {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.9rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(104, 66, 42, 0.12);
+}
+
+.step-chip p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(143, 47, 31, 0.14), rgba(178, 123, 47, 0.16));
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
 .hero-copy h1,
 .card h2 {
   margin: 0;
@@ -164,6 +209,27 @@ body {
   border: 1px solid rgba(105, 34, 23, 0.08);
 }
 
+.world-banner {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(143, 47, 31, 0.08), rgba(178, 123, 47, 0.1));
+  border: 1px solid rgba(143, 47, 31, 0.12);
+}
+
+.world-banner h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+}
+
+.world-banner-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 .scene-label,
 .eyebrow,
 .section-kicker,
@@ -189,6 +255,19 @@ body {
 }
 
 .stack { display: grid; gap: 0.85rem; }
+
+.microcopy-card {
+  padding: 0.85rem 0.95rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid rgba(104, 66, 42, 0.1);
+}
+
+.microcopy-card p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
 
 .section-head {
   display: flex;
@@ -323,6 +402,28 @@ button:disabled {
   border: 1px solid rgba(104, 66, 42, 0.12);
 }
 
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.summary-card {
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(104, 66, 42, 0.12);
+}
+
+.summary-label {
+  display: block;
+  margin-bottom: 0.32rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+}
+
 .player-name,
 .world-title,
 .memory-title,
@@ -380,6 +481,10 @@ button:disabled {
 @media (max-width: 1180px) {
   .hero,
   .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-steps {
     grid-template-columns: 1fr;
   }
 }

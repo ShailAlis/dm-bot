@@ -21,6 +21,33 @@
           Crea una room, registra personajes, sigue la escena, vota decisiones de grupo y consulta
           cronica y memoria sin depender de Telegram o Discord.
         </p>
+        <div class="hero-actions">
+          <button class="primary-button" id="hero-create-button" type="button">Crear aventura</button>
+          <button class="ghost-button" id="hero-open-button" type="button">Abrir room</button>
+        </div>
+        <div class="hero-steps">
+          <article class="step-chip">
+            <span class="step-number">1</span>
+            <div>
+              <strong>Crea la room</strong>
+              <p>Levanta la mesa y define cuantas plazas habra.</p>
+            </div>
+          </article>
+          <article class="step-chip">
+            <span class="step-number">2</span>
+            <div>
+              <strong>Registra personajes</strong>
+              <p>Raza, clase, rasgo y motivacion en un flujo corto.</p>
+            </div>
+          </article>
+          <article class="step-chip">
+            <span class="step-number">3</span>
+            <div>
+              <strong>Juega la escena</strong>
+              <p>Actua, vota y retoma la aventura desde el feed.</p>
+            </div>
+          </article>
+        </div>
       </div>
 
       <div class="hero-status card">
@@ -78,6 +105,10 @@
             </label>
             <button class="primary-button" type="submit">Crear room</button>
           </form>
+          <div class="microcopy-card">
+            <strong>Consejo</strong>
+            <p>Empieza con 2 o 3 jugadores si vas a probar el flujo por primera vez. La aventura arranca sola cuando el grupo se completa.</p>
+          </div>
 
           <form id="open-room-form" class="stack">
             <label class="field">
@@ -164,6 +195,14 @@
               <p class="scene-copy" id="last-narration">Crea o abre una room para empezar a jugar.</p>
             </div>
 
+            <div class="world-banner" id="world-banner">
+              <div>
+                <p class="scene-label">Mundo activo</p>
+                <h3 id="world-banner-title">Todavia no hay aventura activa</h3>
+              </div>
+              <p class="world-banner-copy" id="world-banner-copy">Cuando el grupo se complete, aqui veras el asentamiento, el gancho y el tono de la escena.</p>
+            </div>
+
             <div class="actions-strip">
               <p class="scene-label">Acciones sugeridas</p>
               <div class="button-row wrap" id="suggested-actions"></div>
@@ -208,6 +247,33 @@
       </section>
 
       <aside class="rail">
+        <section class="card stack">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Resumen rapido</p>
+              <h2>Panel de sesion</h2>
+            </div>
+          </div>
+          <div class="summary-grid" id="session-summary">
+            <article class="summary-card">
+              <span class="summary-label">Estado</span>
+              <strong id="summary-phase">Sin room</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Turno</span>
+              <strong id="summary-turn">-</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Memoria</span>
+              <strong id="summary-memory">0 hitos</strong>
+            </article>
+            <article class="summary-card">
+              <span class="summary-label">Feed</span>
+              <strong id="summary-events">0 eventos</strong>
+            </article>
+          </div>
+        </section>
+
         <section class="card stack">
           <div class="section-head">
             <div>

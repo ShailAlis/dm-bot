@@ -178,6 +178,10 @@
     el['phase-badge'].textContent = room.phase || 'sin fase'
     el['players-badge'].textContent = `${room.players.length}/${room.numPlayers} jugadores`
     el['last-narration'].textContent = state.room.ui?.lastNarration || 'Todavia no hay una narracion visible.'
+    const townName = room.worldContext?.town?.name || 'Aventura en preparacion'
+    const hook = room.worldContext?.hook?.summary || 'Cuando el grupo se complete, aqui veras el gancho principal.'
+    el['world-banner-title'].textContent = townName
+    el['world-banner-copy'].textContent = hook
   }
 
   function renderPlayers() {
@@ -307,6 +311,20 @@
     renderSuggestedActions()
     renderVote()
     renderDonations()
+    renderSessionSummary()
+  }
+
+  function renderSessionSummary() {
+    const room = state.room
+    $('summary-phase').textContent = room?.phase || 'Sin room'
+    $('summary-turn').textContent = typeof room?.currentTurn === 'number' ? String(room.currentTurn) : '-'
+    $('summary-memory').textContent = `${(room?.worldMemory || []).length} hitos`
+    $('summary-events').textContent = `${(state.events || []).length} eventos`
+
+    if (!room) {
+      el['world-banner-title'].textContent = 'Todavia no hay aventura activa'
+      el['world-banner-copy'].textContent = 'Cuando el grupo se complete, aqui veras el asentamiento, el gancho y el tono de la escena.'
+    }
   }
 
   async function loadSetupOptions() {
@@ -526,6 +544,8 @@
 
   function wire() {
     el['save-identity-button'].addEventListener('click', saveIdentity)
+    el['hero-create-button'].addEventListener('click', () => $('room-title-input').focus())
+    el['hero-open-button'].addEventListener('click', () => $('room-id-input').focus())
     el['refresh-button'].addEventListener('click', () => refreshRoom().catch((error) => setStatus(error.message, 'bad')))
     el['create-room-form'].addEventListener('submit', (event) => createRoom(event).catch((error) => setStatus(error.message, 'bad')))
     el['open-room-form'].addEventListener('submit', (event) => openRoom(event).catch((error) => setStatus(error.message, 'bad')))
@@ -548,6 +568,8 @@
       'room-pill',
       'last-sync',
       'status-text',
+      'hero-create-button',
+      'hero-open-button',
       'actor-name',
       'save-identity-button',
       'actor-id-label',
@@ -571,6 +593,8 @@
       'phase-badge',
       'players-badge',
       'last-narration',
+      'world-banner-title',
+      'world-banner-copy',
       'suggested-actions',
       'action-form',
       'action-input',
@@ -585,6 +609,10 @@
       'world-summary',
       'memory-list',
       'chronicle-list',
+      'summary-phase',
+      'summary-turn',
+      'summary-memory',
+      'summary-events',
     ].forEach((id) => { el[id] = $(id) })
 
     state.actorId = read(STORAGE_KEYS.actorId, generateActorId())
