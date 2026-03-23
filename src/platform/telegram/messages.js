@@ -27,11 +27,23 @@ async function safeSend(bot, chatId, text, options = {}) {
 }
 
 async function sendWithActions(bot, chatId, text, actions = []) {
+  const keyboardRows = actions.reduce((rows, action) => {
+    const currentRow = rows[rows.length - 1]
+    if (!currentRow || currentRow.length >= 2) {
+      rows.push([{ text: action }])
+    } else {
+      currentRow.push({ text: action })
+    }
+    return rows
+  }, [])
+
   const replyMarkup = actions.length > 0
     ? {
-        keyboard: actions.map((action) => [{ text: action }]),
+        keyboard: keyboardRows,
         resize_keyboard: true,
-        one_time_keyboard: true,
+        one_time_keyboard: false,
+        is_persistent: true,
+        input_field_placeholder: 'Elige una opcion o escribe una respuesta',
       }
     : { remove_keyboard: true }
 
